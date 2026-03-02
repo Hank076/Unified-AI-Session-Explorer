@@ -17,6 +17,11 @@ const state = {
 };
 
 const refs = {
+  panelGrid: null,
+  projectsPanel: null,
+  entriesPanel: null,
+  resizerLeft: null,
+  resizerMiddle: null,
   projectsList: null,
   entriesList: null,
   viewerTitle: null,
@@ -529,6 +534,60 @@ function createElement(tag, className, text) {
   return el;
 }
 
+function initColumnResizers() {
+  const MIN_LEFT = 180;
+  const MIN_MIDDLE = 220;
+  const MIN_RIGHT = 320;
+  const SPLITTER_TOTAL = 16;
+
+  const grid = refs.panelGrid;
+  if (!grid || !refs.projectsPanel || !refs.entriesPanel) return;
+
+  const setSizes = (left, middle) => {
+    grid.style.setProperty("--col-left", `${Math.round(left)}px`);
+    grid.style.setProperty("--col-middle", `${Math.round(middle)}px`);
+  };
+
+  const startDrag = (type, downEvent) => {
+    downEvent.preventDefault();
+    const startX = downEvent.clientX;
+    const startLeft = refs.projectsPanel.getBoundingClientRect().width;
+    const startMiddle = refs.entriesPanel.getBoundingClientRect().width;
+
+    const onMove = (moveEvent) => {
+      const dx = moveEvent.clientX - startX;
+      const containerWidth = grid.getBoundingClientRect().width;
+
+      if (type === "left") {
+        const maxLeft = Math.max(MIN_LEFT, containerWidth - startMiddle - MIN_RIGHT - SPLITTER_TOTAL);
+        const nextLeft = Math.min(Math.max(startLeft + dx, MIN_LEFT), maxLeft);
+        setSizes(nextLeft, startMiddle);
+        return;
+      }
+
+      const maxMiddle = Math.max(
+        MIN_MIDDLE,
+        containerWidth - startLeft - MIN_RIGHT - SPLITTER_TOTAL,
+      );
+      const nextMiddle = Math.min(Math.max(startMiddle + dx, MIN_MIDDLE), maxMiddle);
+      setSizes(startLeft, nextMiddle);
+    };
+
+    const onUp = () => {
+      document.body.classList.remove("resizing-columns");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+
+    document.body.classList.add("resizing-columns");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  refs.resizerLeft?.addEventListener("pointerdown", (event) => startDrag("left", event));
+  refs.resizerMiddle?.addEventListener("pointerdown", (event) => startDrag("middle", event));
+}
+
 function renderRawDetails(raw) {
   const details = document.createElement("details");
   const summary = document.createElement("summary");
@@ -542,11 +601,14 @@ function renderRawDetails(raw) {
 function renderChatItem(item) {
   const article = createElement("article", `event chat ${item.kind}`);
   const header = createElement("header", "event-header");
+  const visibleTags = state.showChatOnly
+    ? item.tags.filter((tag) => tag !== "thinking" && tag !== "tool_result")
+    : item.tags;
   const titleGroup = createElement("div", "title-group");
   titleGroup.append(createElement("span", "badge", item.title));
-  if (item.kind === "chat_assistant" && item.tags.length > 0) {
+  if (item.kind === "chat_assistant" && visibleTags.length > 0) {
     const inlineTagRow = createElement("div", "inline-tag-row");
-    for (const tag of item.tags.slice(0, 4)) {
+    for (const tag of visibleTags.slice(0, 4)) {
       inlineTagRow.append(createElement("span", "tag inline-tag", tag));
     }
     titleGroup.append(inlineTagRow);
@@ -578,15 +640,20 @@ function renderChatItem(item) {
     article.append(toggle);
   }
 
-  if (item.kind !== "chat_assistant" && item.tags.length > 0) {
+  if (item.kind !== "chat_assistant" && visibleTags.length > 0) {
     const tagRow = createElement("div", "tag-row");
-    for (const tag of item.tags.slice(0, 4)) {
+    for (const tag of visibleTags.slice(0, 4)) {
       tagRow.append(createElement("span", "tag", tag));
     }
     article.append(tagRow);
   }
 
-  if (item.kind === "chat_assistant" && Array.isArray(item.thinkingDetails) && item.thinkingDetails.length > 0) {
+  if (
+    !state.showChatOnly &&
+    item.kind === "chat_assistant" &&
+    Array.isArray(item.thinkingDetails) &&
+    item.thinkingDetails.length > 0
+  ) {
     const thinkingBox = createElement("details", "assistant-fold");
     thinkingBox.append(
       createElement("summary", "assistant-fold-summary", `內部思考（${item.thinkingDetails.length}）`),
@@ -599,7 +666,11 @@ function renderChatItem(item) {
     article.append(thinkingBox);
   }
 
-  if (item.kind === "chat_assistant" && Array.isArray(item.toolUseDetails) && item.toolUseDetails.length > 0) {
+  if (
+    item.kind === "chat_assistant" &&
+    Array.isArray(item.toolUseDetails) &&
+    item.toolUseDetails.length > 0
+  ) {
     const toolBox = createElement("section", "assistant-tools");
     toolBox.append(createElement("h4", "assistant-subtitle", "工具調用"));
     for (const detail of item.toolUseDetails.slice(0, 4)) {
@@ -614,6 +685,7 @@ function renderChatItem(item) {
   }
 
   if (
+    !state.showChatOnly &&
     item.kind === "chat_assistant" &&
     Array.isArray(item.toolResultDetails) &&
     item.toolResultDetails.length > 0
@@ -823,6 +895,11 @@ async function selectEntry(entry) {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  refs.panelGrid = document.querySelector("#panel-grid");
+  refs.projectsPanel = document.querySelector("#projects-panel");
+  refs.entriesPanel = document.querySelector("#entries-panel");
+  refs.resizerLeft = document.querySelector("#resizer-left");
+  refs.resizerMiddle = document.querySelector("#resizer-middle");
   refs.projectsList = document.querySelector("#projects-list");
   refs.entriesList = document.querySelector("#entries-list");
   refs.viewerTitle = document.querySelector("#viewer-title");
@@ -835,6 +912,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     state.showChatOnly = event.target.checked;
     renderTimelineView();
   });
+  initColumnResizers();
 
   clearViewer();
   await loadProjects();

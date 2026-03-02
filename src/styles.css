@@ -1,4 +1,6 @@
 ﻿:root {
+  --col-left: 280px;
+  --col-middle: 340px;
   font-family: "Noto Sans TC", "Segoe UI", sans-serif;
   color: #e8eef2;
   background:
@@ -17,15 +19,17 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .app {
-  min-height: 100vh;
+  height: 100vh;
   padding: 24px;
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 16px;
+  overflow: hidden;
 }
 
 .app-header h1 {
@@ -39,10 +43,39 @@ body {
 }
 
 .panel-grid {
+  height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 280px 340px minmax(420px, 1fr);
-  gap: 12px;
+  grid-template-columns:
+    minmax(180px, var(--col-left))
+    8px
+    minmax(220px, var(--col-middle))
+    8px
+    minmax(320px, 1fr);
+  gap: 0;
+  overflow: hidden;
+}
+
+.col-resizer {
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+}
+
+.col-resizer::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 999px;
+  background: #3c5668;
+}
+
+.col-resizer:hover::before {
+  background: #74d5ae;
 }
 
 .panel {
@@ -53,6 +86,7 @@ body {
   padding: 12px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .panel h2 {
@@ -87,6 +121,8 @@ body {
   overflow: auto;
   display: grid;
   gap: 6px;
+  flex: 1;
+  min-height: 0;
 }
 
 .list-btn {
@@ -113,6 +149,7 @@ body {
 .tech-group-toggle:focus-visible,
 .load-more-btn:focus-visible,
 .expand-btn:focus-visible,
+.col-resizer:focus-visible,
 details summary:focus-visible,
 .chat-only-toggle input:focus-visible {
   outline: 2px solid #74d5ae;
@@ -147,6 +184,7 @@ details summary:focus-visible,
   margin-top: 8px;
   overflow: auto;
   flex: 1;
+  min-height: 0;
   border-radius: 10px;
   padding: 12px;
   background: #0e151e;
@@ -410,9 +448,19 @@ details pre {
   word-break: break-word;
 }
 
+body.resizing-columns {
+  user-select: none;
+  cursor: col-resize;
+}
+
 @media (max-width: 1200px) {
   .panel-grid {
-    grid-template-columns: 240px 300px minmax(300px, 1fr);
+    grid-template-columns:
+      minmax(180px, var(--col-left))
+      8px
+      minmax(220px, var(--col-middle))
+      8px
+      minmax(300px, 1fr);
   }
 }
 
@@ -424,6 +472,11 @@ details pre {
   .panel-grid {
     grid-template-columns: 1fr;
     grid-auto-rows: minmax(220px, auto);
+    overflow: auto;
+  }
+
+  .col-resizer {
+    display: none;
   }
 
   .viewer-header-row {

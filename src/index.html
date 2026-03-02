@@ -15,18 +15,34 @@
         <p>瀏覽 ~/.claude/projects、session 與 MEMORY.md</p>
       </header>
 
-      <section class="panel-grid" aria-label="Projects Explorer">
-        <aside class="panel" aria-label="Projects">
+      <section id="panel-grid" class="panel-grid" aria-label="Projects Explorer">
+        <aside id="projects-panel" class="panel" aria-label="Projects">
           <h2>Projects</h2>
           <ul id="projects-list" class="list"></ul>
         </aside>
 
-        <aside class="panel" aria-label="Entries">
+        <div
+          id="resizer-left"
+          class="col-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="調整 Projects 與 Entries 欄寬"
+        ></div>
+
+        <aside id="entries-panel" class="panel" aria-label="Entries">
           <h2>Entries</h2>
           <ul id="entries-list" class="list"></ul>
         </aside>
 
-        <section class="panel viewer" aria-label="Viewer">
+        <div
+          id="resizer-middle"
+          class="col-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="調整 Entries 與 Viewer 欄寬"
+        ></div>
+
+        <section id="viewer-panel" class="panel viewer" aria-label="Viewer">
           <div class="viewer-header-row">
             <h2 id="viewer-title">Viewer</h2>
             <label class="chat-only-toggle" for="chat-only-toggle">
