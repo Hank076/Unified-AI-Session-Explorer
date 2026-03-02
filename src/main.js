@@ -157,6 +157,81 @@ function normalizeContentItems(content) {
   return [];
 }
 
+function parseAskUserQuestions(input) {
+  const rawQuestions = input?.questions;
+  if (Array.isArray(rawQuestions)) return rawQuestions;
+  if (typeof rawQuestions === "string") {
+    try {
+      const parsed = JSON.parse(rawQuestions);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function buildToolUseDetail(item) {
+  if (!item || item.type !== "tool_use") return null;
+  const toolName = String(item.name || "unknown");
+  const input = item.input && typeof item.input === "object" ? item.input : {};
+
+  if (toolName === "AskUserQuestion") {
+    const questions = parseAskUserQuestions(input);
+    const lines = [];
+    for (const q of questions) {
+      const question = typeof q?.question === "string" ? q.question.trim() : "";
+      if (question) lines.push(`Q: ${question}`);
+      if (Array.isArray(q?.options) && q.options.length > 0) {
+        const labels = q.options
+          .map((opt) => (typeof opt?.label === "string" ? opt.label.trim() : ""))
+          .filter(Boolean);
+        if (labels.length > 0) lines.push(`選項: ${labels.join(" / ")}`);
+      }
+    }
+    return {
+      toolName,
+      title: "向使用者提問",
+      lines: lines.length > 0 ? lines : ["questions 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "Bash") {
+    const command = typeof input.command === "string" ? input.command.trim() : "";
+    const description = typeof input.description === "string" ? input.description.trim() : "";
+    const lines = [];
+    if (description) lines.push(`描述: ${description}`);
+    if (command) lines.push(`命令: ${command}`);
+    return {
+      toolName,
+      title: "Bash 指令執行",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "Read") {
+    const filePath = typeof input.file_path === "string" ? input.file_path.trim() : "";
+    const offset = Number.isFinite(input.offset) ? input.offset : null;
+    const limit = Number.isFinite(input.limit) ? input.limit : null;
+    const lines = [];
+    if (filePath) lines.push(`檔案: ${filePath}`);
+    if (offset !== null || limit !== null) {
+      lines.push(`範圍: offset=${offset ?? 0}, limit=${limit ?? "auto"}`);
+    }
+    return {
+      toolName,
+      title: "檔案讀取",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  return {
+    toolName,
+    title: `工具調用: ${toolName}`,
+    lines: ["已記錄工具調用（可展開 Raw JSON 查看完整 input）"],
+  };
+}
+
 function extractTextSummary(raw) {
   const message = raw?.message;
   const content = message?.content ?? message;
@@ -165,6 +240,8 @@ function extractTextSummary(raw) {
   let toolUseCount = 0;
   let thinkingCount = 0;
   const toolNames = new Set();
+  const thinkingDetails = [];
+  const toolUseDetails = [];
 
   if (typeof content === "string" && content.trim()) {
     textChunks.push(content.trim());
@@ -176,6 +253,10 @@ function extractTextSummary(raw) {
 
     if (item.type === "text" && typeof item.text === "string" && item.text.trim()) {
       textChunks.push(item.text.trim());
+    }
+
+    if (item.type === "thinking" && typeof item.thinking === "string" && item.thinking.trim()) {
+      thinkingDetails.push(item.thinking.trim());
     }
 
     if (item.type === "tool_result") {
@@ -208,6 +289,8 @@ function extractTextSummary(raw) {
       const toolName = item.name || "unknown";
       toolNames.add(String(toolName));
       tags.push(`tool:${toolName}`);
+      const detail = buildToolUseDetail(item);
+      if (detail) toolUseDetails.push(detail);
     }
   }
 
@@ -224,24 +307,24 @@ function extractTextSummary(raw) {
   const summary = truncateText(textChunks.join("\n").trim(), 380);
   if (summary) {
     const commandDisplay = extractCommandDisplay(summary);
-    return { summary: commandDisplay || summary, tags };
+    return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails };
   }
 
   if (contentItems.some((item) => item.type === "tool_result")) {
-    return { summary: "工具結果（可展開 Raw JSON）", tags };
+    return { summary: "工具結果（可展開 Raw JSON）", tags, thinkingDetails, toolUseDetails };
   }
 
   if (toolUseCount > 0) {
     const names = Array.from(toolNames).slice(0, 3).join(", ");
     const suffix = names ? `：${names}${toolNames.size > 3 ? "..." : ""}` : "";
-    return { summary: `工具呼叫 ${toolUseCount} 次${suffix}`, tags };
+    return { summary: `工具呼叫 ${toolUseCount} 次${suffix}`, tags, thinkingDetails, toolUseDetails };
   }
 
   if (thinkingCount > 0) {
-    return { summary: `Claude 內部思考事件 ${thinkingCount} 筆`, tags };
+    return { summary: `Claude 內部思考事件 ${thinkingCount} 筆`, tags, thinkingDetails, toolUseDetails };
   }
 
-  return { summary: "事件內容為結構化資料（可展開 Raw JSON）", tags };
+  return { summary: "事件內容為結構化資料（可展開 Raw JSON）", tags, thinkingDetails, toolUseDetails };
 }
 
 function buildTechSummary(event) {
@@ -323,6 +406,8 @@ function normalizeEvents(events) {
         title: roleType === "user" ? "使用者" : "Claude",
         summary: text.summary,
         tags: text.tags,
+        thinkingDetails: text.thinkingDetails,
+        toolUseDetails: text.toolUseDetails,
         raw: event.raw,
       });
       continue;
@@ -397,8 +482,17 @@ function renderRawDetails(raw) {
 function renderChatItem(item) {
   const article = createElement("article", `event chat ${item.kind}`);
   const header = createElement("header", "event-header");
+  const titleGroup = createElement("div", "title-group");
+  titleGroup.append(createElement("span", "badge", item.title));
+  if (item.kind === "chat_assistant" && item.tags.length > 0) {
+    const inlineTagRow = createElement("div", "inline-tag-row");
+    for (const tag of item.tags.slice(0, 4)) {
+      inlineTagRow.append(createElement("span", "tag inline-tag", tag));
+    }
+    titleGroup.append(inlineTagRow);
+  }
   header.append(
-    createElement("span", "badge", item.title),
+    titleGroup,
     createElement("span", "time", formatTimestamp(item.timestamp)),
     createElement("span", "line", `line ${item.line}`),
   );
@@ -406,12 +500,35 @@ function renderChatItem(item) {
   const body = createElement("p", "chat-text", item.summary);
   article.append(header, body);
 
-  if (item.tags.length > 0) {
+  if (item.kind !== "chat_assistant" && item.tags.length > 0) {
     const tagRow = createElement("div", "tag-row");
     for (const tag of item.tags.slice(0, 4)) {
       tagRow.append(createElement("span", "tag", tag));
     }
     article.append(tagRow);
+  }
+
+  if (item.kind === "chat_assistant" && Array.isArray(item.thinkingDetails) && item.thinkingDetails.length > 0) {
+    const thinkingBox = createElement("section", "assistant-thinking");
+    thinkingBox.append(createElement("h4", "assistant-subtitle", "內部思考"));
+    for (const text of item.thinkingDetails.slice(0, 2)) {
+      thinkingBox.append(createElement("p", "assistant-thinking-text", truncateText(text, 500)));
+    }
+    article.append(thinkingBox);
+  }
+
+  if (item.kind === "chat_assistant" && Array.isArray(item.toolUseDetails) && item.toolUseDetails.length > 0) {
+    const toolBox = createElement("section", "assistant-tools");
+    toolBox.append(createElement("h4", "assistant-subtitle", "工具調用"));
+    for (const detail of item.toolUseDetails.slice(0, 4)) {
+      const card = createElement("div", "assistant-tool-card");
+      card.append(createElement("div", "assistant-tool-title", detail.title));
+      for (const line of detail.lines.slice(0, 5)) {
+        card.append(createElement("div", "assistant-tool-line", line));
+      }
+      toolBox.append(card);
+    }
+    article.append(toolBox);
   }
 
   article.append(renderRawDetails(item.raw));

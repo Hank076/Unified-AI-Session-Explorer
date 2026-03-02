@@ -193,6 +193,20 @@ details summary:focus-visible,
   margin-bottom: 8px;
 }
 
+.title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.inline-tag-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
 .badge {
   border: 1px solid #477496;
   border-radius: 999px;
@@ -245,6 +259,60 @@ details summary:focus-visible,
   border: 1px solid #3d5d71;
   border-radius: 999px;
   padding: 0 8px;
+}
+
+.tag.inline-tag {
+  font-size: 11px;
+  padding: 0 6px;
+}
+
+.assistant-thinking,
+.assistant-tools {
+  margin-top: 10px;
+  border: 1px solid #355165;
+  border-radius: 8px;
+  background: #0f1d29;
+  padding: 8px;
+}
+
+.assistant-subtitle {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #8fc5db;
+}
+
+.assistant-thinking-text {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #cde2ee;
+  line-height: 1.4;
+}
+
+.assistant-tool-card {
+  border: 1px solid #3c5d72;
+  border-radius: 8px;
+  padding: 6px;
+  background: #142737;
+  margin-bottom: 6px;
+}
+
+.assistant-tool-card:last-child {
+  margin-bottom: 0;
+}
+
+.assistant-tool-title {
+  font-size: 12px;
+  color: #9fd2e8;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.assistant-tool-line {
+  font-size: 12px;
+  color: #d2e6f2;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .tech-group {
