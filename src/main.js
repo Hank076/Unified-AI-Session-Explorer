@@ -270,6 +270,28 @@ function extractToolResultDetail(item, index = 1) {
   };
 }
 
+function extractChatOnlySummary(raw) {
+  if (raw?.type === "tool_result") return "";
+
+  const message = raw?.message;
+  const content = message?.content ?? message;
+  const chunks = [];
+
+  if (typeof content === "string" && content.trim()) {
+    chunks.push(content.trim());
+  }
+
+  const items = normalizeContentItems(content);
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "text" && typeof item.text === "string" && item.text.trim()) {
+      chunks.push(item.text.trim());
+    }
+  }
+
+  return chunks.join("\n").trim();
+}
+
 function extractTextSummary(raw) {
   const message = raw?.message;
   const content = message?.content ?? message;
@@ -466,6 +488,7 @@ function normalizeEvents(events) {
         timestamp: event.timestamp,
         title: roleType === "user" ? "使用者" : "Claude",
         summary: text.summary,
+        chatOnlySummary: extractChatOnlySummary(event.raw),
         tags:
           rawType === "tool_result" && !text.tags.includes("tool_result")
             ? [...text.tags, "tool_result"]
@@ -619,7 +642,9 @@ function renderChatItem(item) {
     createElement("span", "line", `line ${item.line}`),
   );
 
-  const fullText = String(item.summary || "");
+  const fullText = String(
+    state.showChatOnly ? item.chatOnlySummary || "" : item.summary || "",
+  );
   const isLong = fullText.length > CHAT_PREVIEW_LENGTH;
   let expanded = false;
   const body = createElement(
@@ -805,6 +830,11 @@ function renderTimelineView() {
 
   for (const item of state.timelineItems) {
     if (item.kind.startsWith("chat")) {
+      if (state.showChatOnly && item.kind === "chat_assistant") {
+        if (!String(item.chatOnlySummary || "").trim()) {
+          continue;
+        }
+      }
       refs.viewerContent.append(renderChatItem(item));
       renderedCount += 1;
       continue;
