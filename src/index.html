@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-Hant-TW">
   <head>
     <meta charset="UTF-8" />
@@ -27,7 +27,13 @@
         </aside>
 
         <section class="panel viewer" aria-label="Viewer">
-          <h2 id="viewer-title">Viewer</h2>
+          <div class="viewer-header-row">
+            <h2 id="viewer-title">Viewer</h2>
+            <label class="chat-only-toggle" for="chat-only-toggle">
+              <input id="chat-only-toggle" type="checkbox" />
+              只看對話
+            </label>
+          </div>
           <div id="viewer-meta" class="meta"></div>
           <div id="status" class="status" role="status" aria-live="polite"></div>
           <div id="viewer-content" class="viewer-content">

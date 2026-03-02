@@ -1,4 +1,6 @@
-const { invoke } = window.__TAURI__.core;
+﻿const { invoke } = window.__TAURI__.core;
+
+const TECH_PREVIEW_COUNT = 20;
 
 const state = {
   projects: [],
@@ -6,6 +8,11 @@ const state = {
   selectedProjectPath: "",
   selectedEntryPath: "",
   selectedEntryType: "",
+  timelineItems: [],
+  parseErrors: [],
+  parseErrorCode: "",
+  showChatOnly: false,
+  techViewState: {},
 };
 
 const refs = {
@@ -15,6 +22,7 @@ const refs = {
   viewerMeta: null,
   viewerContent: null,
   status: null,
+  chatOnlyToggle: null,
 };
 
 function setStatus(message, type = "info") {
@@ -30,13 +38,17 @@ function formatError(code) {
 }
 
 function clearViewer() {
+  state.timelineItems = [];
+  state.parseErrors = [];
+  state.parseErrorCode = "";
+  state.techViewState = {};
   refs.viewerTitle.textContent = "Viewer";
   refs.viewerMeta.textContent = "";
   refs.viewerContent.innerHTML = '<p class="placeholder">請先選擇專案與項目。</p>';
 }
 
 function escapeHtml(input) {
-  return input
+  return String(input)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -108,42 +120,331 @@ function renderMemory(payload) {
   refs.viewerContent.innerHTML = `<pre class="memory-block">${escapeHtml(payload.content)}</pre>`;
 }
 
-function renderTimeline(payload) {
-  refs.viewerTitle.textContent = "Session Timeline";
-  refs.viewerMeta.textContent = payload.path;
-  const blocks = [];
+function formatTimestamp(timestamp) {
+  if (!timestamp) return "-";
+  const value = new Date(timestamp);
+  if (Number.isNaN(value.getTime())) return String(timestamp);
+  return value.toLocaleString("zh-TW", { hour12: false });
+}
 
-  if (payload.errorCode === "PARSE_PARTIAL") {
-    blocks.push(
-      `<div class="warning">解析警告：${formatError(
-        payload.errorCode,
-      )}（錯誤行數：${payload.errors.map((v) => v.line).join(", ")}）</div>`,
-    );
+function extractTextSummary(raw) {
+  const message = raw?.message;
+  const contentItems = Array.isArray(message?.content) ? message.content : [];
+  const textChunks = [];
+  const tags = [];
+
+  for (const item of contentItems) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "text" && typeof item.text === "string") {
+      textChunks.push(item.text.trim());
+    }
+    if (item.type === "thinking") tags.push("thinking");
+    if (item.type === "tool_use") tags.push(`tool:${item.name || "unknown"}`);
+    if (item.type === "tool_result") tags.push("tool_result");
   }
 
-  if (!payload.events.length) {
-    blocks.push('<p class="placeholder">此 session 沒有可顯示的事件。</p>');
-  } else {
-    for (const event of payload.events) {
-      blocks.push(`
-        <article class="event">
-          <header>
-            <span>${escapeHtml(event.timestamp || "-")}</span>
-            <span>${escapeHtml(event.role || "unknown")}</span>
-            <span>${escapeHtml(event.eventType || "event")}</span>
-            <span>line ${event.line}</span>
-          </header>
-          <p>${escapeHtml(event.summary)}</p>
-          <details>
-            <summary>Raw JSON</summary>
-            <pre>${escapeHtml(JSON.stringify(event.raw, null, 2))}</pre>
-          </details>
-        </article>
-      `);
+  const summary = textChunks.join("\n").trim();
+  if (summary) {
+    const short = summary.length > 380 ? `${summary.slice(0, 380)}...` : summary;
+    return { summary: short, tags };
+  }
+
+  if (contentItems.some((item) => item.type === "tool_result")) {
+    return { summary: "工具結果（可展開 Raw JSON）", tags };
+  }
+
+  return { summary: "無可讀文字內容", tags };
+}
+
+function buildTechSummary(event) {
+  const raw = event.raw || {};
+  const rawType = raw.type || event.eventType || "unknown";
+
+  if (rawType === "progress") {
+    const dataType = raw.data?.type || "progress";
+    if (dataType === "hook_progress") {
+      const hookName = raw.data?.hookName || "unknown";
+      return {
+        subtype: dataType,
+        summary: `Hook 進度：${hookName}`,
+      };
+    }
+    if (dataType === "bash_progress") {
+      const lines = raw.data?.totalLines;
+      if (typeof lines === "number") {
+        return {
+          subtype: dataType,
+          summary: `命令執行進度：目前 ${lines} 行輸出`,
+        };
+      }
+      return {
+        subtype: dataType,
+        summary: "命令執行進度更新",
+      };
+    }
+    return {
+      subtype: dataType,
+      summary: `進度更新：${dataType}`,
+    };
+  }
+
+  if (rawType === "system") {
+    const subtype = raw.subtype || "system";
+    if (subtype === "local_command") {
+      const durationMs = raw.durationMs;
+      const suffix = typeof durationMs === "number" ? `（${durationMs}ms）` : "";
+      return { subtype, summary: `本機命令紀錄${suffix}` };
+    }
+    if (subtype === "turn_duration") {
+      const durationMs = raw.durationMs;
+      const suffix = typeof durationMs === "number" ? `（${durationMs}ms）` : "";
+      return { subtype, summary: `回合耗時${suffix}` };
+    }
+    return { subtype, summary: `系統事件：${subtype}` };
+  }
+
+  if (rawType === "file-history-snapshot") {
+    return { subtype: rawType, summary: "檔案快照已更新" };
+  }
+
+  if (rawType === "queue-operation") {
+    const operation = raw.operation || "unknown";
+    return { subtype: rawType, summary: `佇列操作：${operation}` };
+  }
+
+  return {
+    subtype: rawType,
+    summary: `技術事件：${rawType}`,
+  };
+}
+
+function normalizeEvents(events) {
+  const normalized = [];
+
+  for (const event of events) {
+    const rawType = event.raw?.type || event.eventType || "unknown";
+
+    if (rawType === "user" || rawType === "assistant") {
+      const text = extractTextSummary(event.raw);
+      normalized.push({
+        kind: rawType === "user" ? "chat_user" : "chat_assistant",
+        line: event.line,
+        timestamp: event.timestamp,
+        title: rawType === "user" ? "使用者" : "Claude",
+        summary: text.summary,
+        tags: text.tags,
+        raw: event.raw,
+      });
+      continue;
+    }
+
+    const tech = buildTechSummary(event);
+    normalized.push({
+      kind: "tech",
+      line: event.line,
+      timestamp: event.timestamp,
+      title: rawType,
+      summary: tech.summary,
+      techSubtype: tech.subtype,
+      raw: event.raw,
+    });
+  }
+
+  return normalized;
+}
+
+function buildTimelineItems(events) {
+  const normalized = normalizeEvents(events);
+  const items = [];
+  let currentTechGroup = null;
+  let nextGroupId = 1;
+
+  for (const item of normalized) {
+    if (item.kind === "tech") {
+      if (!currentTechGroup) {
+        const groupId = `tech-group-${nextGroupId++}`;
+        currentTechGroup = {
+          kind: "tech_group",
+          id: groupId,
+          events: [],
+        };
+        items.push(currentTechGroup);
+        if (!state.techViewState[groupId]) {
+          state.techViewState[groupId] = {
+            expanded: false,
+            visibleCount: TECH_PREVIEW_COUNT,
+          };
+        }
+      }
+      currentTechGroup.events.push(item);
+      continue;
+    }
+
+    currentTechGroup = null;
+    items.push(item);
+  }
+
+  return items;
+}
+
+function createElement(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (typeof text === "string") el.textContent = text;
+  return el;
+}
+
+function renderRawDetails(raw) {
+  const details = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.textContent = "Raw JSON";
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify(raw, null, 2);
+  details.append(summary, pre);
+  return details;
+}
+
+function renderChatItem(item) {
+  const article = createElement("article", `event chat ${item.kind}`);
+  const header = createElement("header", "event-header");
+  header.append(
+    createElement("span", "badge", item.title),
+    createElement("span", "time", formatTimestamp(item.timestamp)),
+    createElement("span", "line", `line ${item.line}`),
+  );
+
+  const body = createElement("p", "chat-text", item.summary);
+  article.append(header, body);
+
+  if (item.tags.length > 0) {
+    const tagRow = createElement("div", "tag-row");
+    for (const tag of item.tags.slice(0, 4)) {
+      tagRow.append(createElement("span", "tag", tag));
+    }
+    article.append(tagRow);
+  }
+
+  article.append(renderRawDetails(item.raw));
+  return article;
+}
+
+function renderTechGroup(group) {
+  const wrapper = createElement("section", "tech-group");
+  const viewState = state.techViewState[group.id] || {
+    expanded: false,
+    visibleCount: TECH_PREVIEW_COUNT,
+  };
+
+  const subtypeCount = {};
+  for (const item of group.events) {
+    const key = item.techSubtype || "unknown";
+    subtypeCount[key] = (subtypeCount[key] || 0) + 1;
+  }
+  const subtypeSummary = Object.entries(subtypeCount)
+    .slice(0, 3)
+    .map(([key, count]) => `${key} ${count}`)
+    .join(" / ");
+
+  const headBtn = createElement(
+    "button",
+    "tech-group-toggle",
+    `技術事件 ${group.events.length} 筆${subtypeSummary ? `（${subtypeSummary}）` : ""}`,
+  );
+  headBtn.type = "button";
+  headBtn.dataset.expanded = viewState.expanded ? "true" : "false";
+  headBtn.addEventListener("click", () => {
+    state.techViewState[group.id] = {
+      ...viewState,
+      expanded: !viewState.expanded,
+    };
+    renderTimelineView();
+  });
+  wrapper.append(headBtn);
+
+  if (!viewState.expanded) {
+    return wrapper;
+  }
+
+  const list = createElement("ul", "tech-event-list");
+  const visible = Math.min(viewState.visibleCount, group.events.length);
+  for (const event of group.events.slice(0, visible)) {
+    const row = createElement("li", "tech-event-row");
+    const meta = createElement(
+      "div",
+      "tech-meta",
+      `${formatTimestamp(event.timestamp)} | ${event.title} | line ${event.line}`,
+    );
+    const summary = createElement("div", "tech-summary", event.summary);
+    row.append(meta, summary, renderRawDetails(event.raw));
+    list.append(row);
+  }
+  wrapper.append(list);
+
+  if (visible < group.events.length) {
+    const more = createElement(
+      "button",
+      "load-more-btn",
+      `載入更多 (${group.events.length - visible} 筆)`,
+    );
+    more.type = "button";
+    more.addEventListener("click", () => {
+      state.techViewState[group.id] = {
+        ...viewState,
+        visibleCount: Math.min(group.events.length, viewState.visibleCount + TECH_PREVIEW_COUNT),
+      };
+      renderTimelineView();
+    });
+    wrapper.append(more);
+  }
+
+  return wrapper;
+}
+
+function renderTimelineView() {
+  refs.viewerContent.innerHTML = "";
+
+  if (state.parseErrorCode === "PARSE_PARTIAL") {
+    const warning = createElement(
+      "div",
+      "warning",
+      `${formatError(state.parseErrorCode)}（行號：${state.parseErrors
+        .map((item) => item.line)
+        .join(", ")}）`,
+    );
+    refs.viewerContent.append(warning);
+  }
+
+  let renderedCount = 0;
+
+  for (const item of state.timelineItems) {
+    if (item.kind.startsWith("chat")) {
+      refs.viewerContent.append(renderChatItem(item));
+      renderedCount += 1;
+      continue;
+    }
+
+    if (!state.showChatOnly && item.kind === "tech_group") {
+      refs.viewerContent.append(renderTechGroup(item));
+      renderedCount += 1;
     }
   }
 
-  refs.viewerContent.innerHTML = blocks.join("");
+  if (renderedCount === 0) {
+    refs.viewerContent.innerHTML =
+      '<p class="placeholder">此 session 沒有可顯示的內容。</p>';
+  }
+}
+
+function renderTimeline(payload) {
+  refs.viewerTitle.textContent = "Session Timeline";
+  refs.viewerMeta.textContent = payload.path;
+
+  state.parseErrorCode = payload.errorCode || "";
+  state.parseErrors = Array.isArray(payload.errors) ? payload.errors : [];
+  state.techViewState = {};
+  state.timelineItems = buildTimelineItems(Array.isArray(payload.events) ? payload.events : []);
+
+  renderTimelineView();
 }
 
 async function loadProjects() {
@@ -188,7 +489,7 @@ async function selectEntry(entry) {
     if (entry.entryType === "memory") {
       const payload = await invoke("read_memory", { memoryPath: entry.path });
       renderMemory(payload);
-      setStatus("MEMORY.md 載入完成。");
+      setStatus("MEMORY.md 載入完成。", "info");
       return;
     }
 
@@ -199,7 +500,7 @@ async function selectEntry(entry) {
     if (payload.errorCode) {
       setStatus(formatError(payload.errorCode), "warn");
     } else {
-      setStatus("Session 載入完成。");
+      setStatus("Session 載入完成。", "info");
     }
   } catch (errorCode) {
     setStatus(formatError(String(errorCode)), "error");
@@ -213,6 +514,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.viewerMeta = document.querySelector("#viewer-meta");
   refs.viewerContent = document.querySelector("#viewer-content");
   refs.status = document.querySelector("#status");
+  refs.chatOnlyToggle = document.querySelector("#chat-only-toggle");
+
+  refs.chatOnlyToggle.addEventListener("change", (event) => {
+    state.showChatOnly = event.target.checked;
+    renderTimelineView();
+  });
 
   clearViewer();
   await loadProjects();

@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   font-family: "Noto Sans TC", "Segoe UI", sans-serif;
   color: #e8eef2;
   background:
@@ -61,6 +61,25 @@ body {
   color: #9bc4de;
 }
 
+.viewer-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-only-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #c4d8e4;
+}
+
+.chat-only-toggle input {
+  accent-color: #74d5ae;
+}
+
 .list {
   list-style: none;
   margin: 0;
@@ -90,7 +109,11 @@ body {
   background: #244b65;
 }
 
-.list-btn:focus-visible {
+.list-btn:focus-visible,
+.tech-group-toggle:focus-visible,
+.load-more-btn:focus-visible,
+details summary:focus-visible,
+.chat-only-toggle input:focus-visible {
   outline: 2px solid #74d5ae;
   outline-offset: 2px;
 }
@@ -157,18 +180,110 @@ body {
   margin-bottom: 10px;
 }
 
-.event header {
+.event-header {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: auto auto 1fr;
   gap: 8px;
   font-size: 12px;
   color: #9db0bc;
   margin-bottom: 8px;
 }
 
-.event p {
+.badge {
+  border: 1px solid #477496;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: #d0e8f8;
+}
+
+.chat.chat_user {
+  background: #1a2f43;
+  border-color: #356483;
+}
+
+.chat.chat_assistant {
+  background: #162b34;
+  border-color: #2a697b;
+}
+
+.chat-text {
   margin: 0;
+  white-space: pre-wrap;
   line-height: 1.45;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tag {
+  font-size: 12px;
+  color: #c0d8e5;
+  border: 1px solid #3d5d71;
+  border-radius: 999px;
+  padding: 0 8px;
+}
+
+.tech-group {
+  margin-bottom: 10px;
+  border: 1px solid #2c3f4d;
+  border-radius: 10px;
+  background: #101a23;
+  padding: 8px;
+}
+
+.tech-group-toggle {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #3b5364;
+  border-radius: 8px;
+  background: #182633;
+  color: #c3d4de;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.tech-group-toggle[data-expanded="true"] {
+  background: #223748;
+  border-color: #5a7a92;
+}
+
+.tech-event-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.tech-event-row {
+  border: 1px solid #334b5d;
+  border-radius: 8px;
+  padding: 8px;
+  background: #142330;
+}
+
+.tech-meta {
+  font-size: 12px;
+  color: #9db0bc;
+}
+
+.tech-summary {
+  margin-top: 4px;
+  color: #dbe8ee;
+}
+
+.load-more-btn {
+  margin-top: 8px;
+  border: 1px solid #3f5f73;
+  background: #1c3040;
+  color: #dbe8ee;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
 }
 
 details {
@@ -176,6 +291,7 @@ details {
 }
 
 details pre {
+  margin: 8px 0 0;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -194,5 +310,10 @@ details pre {
   .panel-grid {
     grid-template-columns: 1fr;
     grid-auto-rows: minmax(220px, auto);
+  }
+
+  .viewer-header-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
