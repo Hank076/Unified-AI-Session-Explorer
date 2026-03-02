@@ -661,6 +661,10 @@ html[data-theme="light"] .path-tooltip {
   padding: 8px;
 }
 
+.tech-group-chat {
+  max-width: 82%;
+}
+
 .tech-group-toggle {
   width: 100%;
   text-align: left;

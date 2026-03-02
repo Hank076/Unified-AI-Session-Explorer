@@ -14,8 +14,10 @@
       {
         "label": "main",
         "title": "tauri-app",
-        "width": 800,
-        "height": 600
+        "width": 1320,
+        "height": 860,
+        "minWidth": 1100,
+        "minHeight": 720
       }
     ],
     "security": {

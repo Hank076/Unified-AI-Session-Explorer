@@ -236,10 +236,6 @@ function setChatOnlyVisible(visible) {
   if (!refs.chatOnlyWrap) return;
   refs.chatOnlyWrap.style.display = visible ? "inline-flex" : "none";
   refs.chatOnlyWrap.setAttribute("aria-hidden", visible ? "false" : "true");
-  if (!visible) {
-    refs.chatOnlyToggle.checked = false;
-    state.showChatOnly = false;
-  }
 }
 
 function renderProjects() {
@@ -261,7 +257,13 @@ function formatEntryTime(modifiedMs) {
   if (!Number.isFinite(modifiedMs)) return "時間未知";
   const date = new Date(modifiedMs);
   if (Number.isNaN(date.getTime())) return "時間未知";
-  return date.toLocaleString("zh-TW", { hour12: false });
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
 function formatBytes(sizeBytes) {
@@ -495,6 +497,241 @@ function buildToolUseDetail(item) {
     return {
       toolName,
       title: "檔案讀取",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "TaskCreate") {
+    const activeForm = typeof input.activeForm === "string" ? input.activeForm.trim() : "";
+    const subject = typeof input.subject === "string" ? input.subject.trim() : "";
+    const description =
+      typeof input.description === "string" ? input.description.trim() : "";
+    const lines = [];
+    if (activeForm) lines.push(`目前階段: ${activeForm}`);
+    if (subject) lines.push(`主題: ${subject}`);
+    if (description) lines.push(`描述: ${description}`);
+    return {
+      toolName,
+      title: "任務建立",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "Glob") {
+    const pattern = typeof input.pattern === "string" ? input.pattern.trim() : "";
+    const path = typeof input.path === "string" ? input.path.trim() : "";
+    const lines = [];
+    if (pattern) lines.push(`Pattern: ${pattern}`);
+    if (path) lines.push(`Path: ${path}`);
+    return {
+      toolName,
+      title: "檔案樣式比對",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "Grep") {
+    const pattern = typeof input.pattern === "string" ? input.pattern.trim() : "";
+    const path = typeof input.path === "string" ? input.path.trim() : "";
+    const glob = typeof input.glob === "string" ? input.glob.trim() : "";
+    const lines = [];
+    if (pattern) lines.push(`Pattern: ${pattern}`);
+    if (path) lines.push(`Path: ${path}`);
+    if (glob) lines.push(`Glob: ${glob}`);
+    return {
+      toolName,
+      title: "內容關鍵字搜尋",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "TaskUpdate") {
+    const taskId = typeof input.taskId === "string" ? input.taskId.trim() : "";
+    const status = typeof input.status === "string" ? input.status.trim() : "";
+    const subject = typeof input.subject === "string" ? input.subject.trim() : "";
+    const description =
+      typeof input.description === "string" ? input.description.trim() : "";
+    const activeForm = typeof input.activeForm === "string" ? input.activeForm.trim() : "";
+    const lines = [];
+    if (taskId) lines.push(`Task ID: ${taskId}`);
+    if (status) lines.push(`狀態: ${status}`);
+    if (activeForm) lines.push(`目前階段: ${activeForm}`);
+    if (subject) lines.push(`主題: ${subject}`);
+    if (description) lines.push(`描述: ${description}`);
+    return {
+      toolName,
+      title: "任務更新",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "TaskList") {
+    const filter = typeof input.filter === "string" ? input.filter.trim() : "";
+    const status = typeof input.status === "string" ? input.status.trim() : "";
+    const lines = [];
+    if (filter) lines.push(`篩選: ${filter}`);
+    if (status) lines.push(`狀態: ${status}`);
+    return {
+      toolName,
+      title: "任務清單查詢",
+      lines: lines.length > 0 ? lines : ["列出所有任務"],
+    };
+  }
+
+  if (toolName === "TaskGet") {
+    const taskId = typeof input.taskId === "string" ? input.taskId.trim() : "";
+    const id = typeof input.id === "string" ? input.id.trim() : "";
+    const lines = [];
+    if (taskId || id) lines.push(`Task ID: ${taskId || id}`);
+    return {
+      toolName,
+      title: "任務詳情查詢",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "Edit") {
+    const filePath = typeof input.file_path === "string" ? input.file_path.trim() : "";
+    const oldString = typeof input.old_string === "string" ? input.old_string.trim() : "";
+    const newString = typeof input.new_string === "string" ? input.new_string.trim() : "";
+    const lines = [];
+    if (filePath) lines.push(`檔案: ${filePath}`);
+    if (oldString) lines.push(`舊內容: ${truncateText(oldString, 120)}`);
+    if (newString) lines.push(`新內容: ${truncateText(newString, 120)}`);
+    return {
+      toolName,
+      title: "檔案局部編輯",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "Write") {
+    const filePath = typeof input.file_path === "string" ? input.file_path.trim() : "";
+    const content = typeof input.content === "string" ? input.content : "";
+    const lines = [];
+    if (filePath) lines.push(`檔案: ${filePath}`);
+    if (content) lines.push(`內容長度: ${content.length} 字元`);
+    return {
+      toolName,
+      title: "檔案寫入/覆寫",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "TaskOutput") {
+    const taskId = typeof input.taskId === "string" ? input.taskId.trim() : "";
+    const shellId = typeof input.shellId === "string" ? input.shellId.trim() : "";
+    const lines = [];
+    if (taskId) lines.push(`Task ID: ${taskId}`);
+    if (shellId) lines.push(`Shell ID: ${shellId}`);
+    return {
+      toolName,
+      title: "背景任務輸出讀取",
+      lines: lines.length > 0 ? lines : ["讀取背景任務輸出"],
+    };
+  }
+
+  if (toolName === "Skill") {
+    const skillName = typeof input.skillName === "string" ? input.skillName.trim() : "";
+    const name = typeof input.name === "string" ? input.name.trim() : "";
+    const lines = [];
+    if (skillName || name) lines.push(`Skill: ${skillName || name}`);
+    return {
+      toolName,
+      title: "Skill 執行",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "Agent") {
+    const task = typeof input.task === "string" ? input.task.trim() : "";
+    const lines = [];
+    if (task) lines.push(`任務: ${truncateText(task, 180)}`);
+    return {
+      toolName,
+      title: "子代理執行",
+      lines: lines.length > 0 ? lines : ["啟動 sub-agent 任務"],
+    };
+  }
+
+  if (toolName === "WebSearch") {
+    const query = typeof input.query === "string" ? input.query.trim() : "";
+    const domains = Array.isArray(input.domains) ? input.domains.join(", ") : "";
+    const lines = [];
+    if (query) lines.push(`Query: ${query}`);
+    if (domains) lines.push(`Domains: ${domains}`);
+    return {
+      toolName,
+      title: "網路搜尋",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "WebFetch") {
+    const url = typeof input.url === "string" ? input.url.trim() : "";
+    const lines = [];
+    if (url) lines.push(`URL: ${url}`);
+    return {
+      toolName,
+      title: "網頁內容擷取",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "MCPSearch") {
+    const query = typeof input.query === "string" ? input.query.trim() : "";
+    const lines = [];
+    if (query) lines.push(`Query: ${query}`);
+    return {
+      toolName,
+      title: "MCP 工具搜尋",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "KillShell") {
+    const shellId = typeof input.shell_id === "string" ? input.shell_id.trim() : "";
+    const lines = [];
+    if (shellId) lines.push(`Shell ID: ${shellId}`);
+    return {
+      toolName,
+      title: "終止背景 Shell",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "ExitPlanMode") {
+    const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+    const lines = [];
+    if (reason) lines.push(`原因: ${reason}`);
+    return {
+      toolName,
+      title: "離開規劃模式",
+      lines: lines.length > 0 ? lines : ["提示使用者開始實作"],
+    };
+  }
+
+  if (toolName === "NotebookEdit") {
+    const notebookPath =
+      typeof input.notebook_path === "string" ? input.notebook_path.trim() : "";
+    const lines = [];
+    if (notebookPath) lines.push(`Notebook: ${notebookPath}`);
+    return {
+      toolName,
+      title: "Notebook 編輯",
+      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+    };
+  }
+
+  if (toolName === "LSP") {
+    const method = typeof input.method === "string" ? input.method.trim() : "";
+    const path = typeof input.path === "string" ? input.path.trim() : "";
+    const lines = [];
+    if (method) lines.push(`Method: ${method}`);
+    if (path) lines.push(`Path: ${path}`);
+    return {
+      toolName,
+      title: "語言伺服器分析",
       lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
     };
   }
@@ -1024,7 +1261,7 @@ function renderChatItem(item) {
 }
 
 function renderTechGroup(group) {
-  const wrapper = createElement("section", "tech-group");
+  const wrapper = createElement("section", "event chat chat_assistant tech-group tech-group-chat");
   const viewState = state.techViewState[group.id] || {
     expanded: false,
     visibleCount: TECH_PREVIEW_COUNT,
@@ -1039,6 +1276,17 @@ function renderTechGroup(group) {
     .slice(0, 3)
     .map(([key, count]) => `${key} ${count}`)
     .join(" / ");
+
+  const header = createElement("header", "event-header");
+  const titleGroup = createElement("div", "title-group");
+  titleGroup.append(createElement("span", "badge", "Claude"));
+  titleGroup.append(createElement("span", "tag inline-tag", "technical"));
+  header.append(
+    titleGroup,
+    createElement("span", "time", "-"),
+    createElement("span", "line", `events ${group.events.length}`),
+  );
+  wrapper.append(header);
 
   const headBtn = createElement(
     "button",
@@ -1190,7 +1438,8 @@ async function selectEntry(entry) {
   state.selectedEntryType = entry.entryType;
   renderEntries();
   setStatus("載入內容中...");
-  setChatOnlyVisible(!isMarkdownPath(entry.path));
+  const hideChatOnly = entry.entryType === "memory_file";
+  setChatOnlyVisible(!hideChatOnly);
 
   try {
     if (entry.entryType === "memory_file") {
@@ -1203,6 +1452,7 @@ async function selectEntry(entry) {
     const payload = await invoke("read_session_timeline", {
       sessionPath: entry.path,
     });
+    setChatOnlyVisible(true);
     renderTimeline(payload);
     if (payload.errorCode) {
       setStatus(formatError(payload.errorCode), "warn");
@@ -1210,6 +1460,9 @@ async function selectEntry(entry) {
       setStatus("Session 載入完成。", "info");
     }
   } catch (errorCode) {
+    if (entry.entryType !== "memory_file") {
+      setChatOnlyVisible(true);
+    }
     setStatus(formatError(String(errorCode)), "error");
   }
 }
@@ -1237,6 +1490,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  refs.chatOnlyToggle.checked = true;
+  state.showChatOnly = true;
   refs.chatOnlyToggle.addEventListener("change", (event) => {
     state.showChatOnly = event.target.checked;
     renderTimelineView();
