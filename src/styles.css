@@ -136,6 +136,34 @@ body {
   cursor: pointer;
 }
 
+.entry-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.entry-primary {
+  font-size: 13px;
+  color: #dceaf1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-secondary {
+  font-size: 11px;
+  color: #94abba;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-btn[data-subagent="true"] {
+  margin-left: 16px;
+  border-left: 3px solid #4f7087;
+  padding-left: 10px;
+}
+
 .list-btn:hover {
   background: #22364a;
 }

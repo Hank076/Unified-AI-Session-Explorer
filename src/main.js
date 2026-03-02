@@ -97,12 +97,24 @@ function renderProjects() {
   }
 }
 
-function buildEntryLabel(entry) {
-  if (entry.entryType === "memory") return "📘 MEMORY.md";
-  if (entry.entryType === "subagent_session") {
-    return `↳ ${entry.label} (subagent: ${entry.parentSession})`;
+function formatEntryTime(modifiedMs) {
+  if (!Number.isFinite(modifiedMs)) return "時間未知";
+  const date = new Date(modifiedMs);
+  if (Number.isNaN(date.getTime())) return "時間未知";
+  return date.toLocaleString("zh-TW", { hour12: false });
+}
+
+function formatBytes(sizeBytes) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes < 0) return "-";
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = sizeBytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
   }
-  return entry.label;
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unitIndex]}`;
 }
 
 function renderEntries() {
@@ -110,9 +122,23 @@ function renderEntries() {
   for (const entry of state.entries) {
     const li = document.createElement("li");
     const button = document.createElement("button");
-    button.className = "list-btn";
-    button.textContent = buildEntryLabel(entry);
-    button.title = entry.path;
+    button.className = "list-btn entry-btn";
+    button.dataset.entryType = entry.entryType;
+    button.dataset.subagent = entry.entryType === "subagent_session" ? "true" : "false";
+
+    const timeLabel = formatEntryTime(entry.modifiedMs);
+    const primaryText =
+      entry.entryType === "subagent_session" ? `↳ ${timeLabel}` : timeLabel;
+    const secondaryParts = [formatBytes(entry.sizeBytes)];
+    if (entry.entryType === "memory") secondaryParts.push("MEMORY");
+    if (entry.entryType === "session") secondaryParts.push("session");
+    if (entry.entryType === "subagent_session") secondaryParts.push("subagent");
+
+    const primary = createElement("div", "entry-primary", primaryText);
+    const secondary = createElement("div", "entry-secondary", secondaryParts.join(" · "));
+    button.append(primary, secondary);
+
+    button.title = `${entry.label}\n${entry.path}`;
     if (state.selectedEntryPath === entry.path) button.dataset.active = "true";
     button.addEventListener("click", () => selectEntry(entry));
     li.appendChild(button);

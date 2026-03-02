@@ -2,6 +2,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
 const ERR_NOT_FOUND: &str = "NOT_FOUND";
 const ERR_READ_FAILED: &str = "READ_FAILED";
@@ -21,6 +22,8 @@ pub struct Entry {
     label: String,
     path: String,
     parent_session: Option<String>,
+    modified_ms: Option<u64>,
+    size_bytes: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,11 +98,14 @@ pub fn list_project_entries(
     let mut entries = Vec::new();
     let memory_path = project.join("memory").join("MEMORY.md");
     if memory_path.is_file() {
+        let (modified_ms, size_bytes) = get_file_metadata(&memory_path);
         entries.push(Entry {
             entry_type: "memory".to_string(),
             label: "MEMORY.md".to_string(),
             path: memory_path.to_string_lossy().to_string(),
             parent_session: None,
+            modified_ms,
+            size_bytes,
         });
     }
 
@@ -124,11 +130,14 @@ pub fn list_project_entries(
             .map(|v| v.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown.jsonl".to_string());
 
+        let (modified_ms, size_bytes) = get_file_metadata(&session);
         entries.push(Entry {
             entry_type: "session".to_string(),
             label: session_label,
             path: session.to_string_lossy().to_string(),
             parent_session: None,
+            modified_ms,
+            size_bytes,
         });
 
         let subagents_dir = project.join(&stem).join("subagents");
@@ -152,11 +161,14 @@ pub fn list_project_entries(
                 .file_name()
                 .map(|v| v.to_string_lossy().to_string())
                 .unwrap_or_else(|| "unknown.jsonl".to_string());
+            let (modified_ms, size_bytes) = get_file_metadata(&subagent_file);
             entries.push(Entry {
                 entry_type: "subagent_session".to_string(),
                 label,
                 path: subagent_file.to_string_lossy().to_string(),
                 parent_session: Some(stem.clone()),
+                modified_ms,
+                size_bytes,
             });
         }
     }
@@ -318,6 +330,21 @@ fn map_read_error(error: std::io::Error) -> String {
         std::io::ErrorKind::NotFound => ERR_NOT_FOUND.to_string(),
         _ => ERR_READ_FAILED.to_string(),
     }
+}
+
+fn get_file_metadata(path: &Path) -> (Option<u64>, Option<u64>) {
+    let Ok(meta) = fs::metadata(path) else {
+        return (None, None);
+    };
+
+    let size = Some(meta.len());
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok());
+
+    (modified_ms, size)
 }
 
 #[cfg(test)]
