@@ -180,6 +180,10 @@ details summary:focus-visible,
   margin-bottom: 10px;
 }
 
+.event.chat {
+  max-width: 82%;
+}
+
 .event-header {
   display: grid;
   grid-template-columns: auto auto 1fr;
@@ -199,11 +203,27 @@ details summary:focus-visible,
 .chat.chat_user {
   background: #1a2f43;
   border-color: #356483;
+  margin-left: auto;
+  margin-right: 0;
 }
 
 .chat.chat_assistant {
   background: #162b34;
   border-color: #2a697b;
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.chat.chat_user .event-header {
+  text-align: right;
+}
+
+.chat.chat_user .chat-text {
+  text-align: right;
+}
+
+.chat.chat_user .tag-row {
+  justify-content: flex-end;
 }
 
 .chat-text {
