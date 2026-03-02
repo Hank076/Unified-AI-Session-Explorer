@@ -127,33 +127,121 @@ function formatTimestamp(timestamp) {
   return value.toLocaleString("zh-TW", { hour12: false });
 }
 
+function truncateText(text, limit = 380) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}...`;
+}
+
+function extractCommandDisplay(text) {
+  const source = String(text || "");
+  const commandName = source.match(/<command-name>([\s\S]*?)<\/command-name>/i)?.[1]?.trim();
+  const commandArgs = source.match(/<command-args>([\s\S]*?)<\/command-args>/i)?.[1]?.trim();
+  const parts = [commandName, commandArgs].filter(Boolean);
+  if (parts.length === 0) return null;
+  return parts.join(" ");
+}
+
+function extractTextFromUnknown(value) {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  if (typeof value.text === "string") return value.text.trim();
+  if (typeof value.content === "string") return value.content.trim();
+  return "";
+}
+
+function normalizeContentItems(content) {
+  if (Array.isArray(content)) return content;
+  if (content && typeof content === "object") return [content];
+  return [];
+}
+
 function extractTextSummary(raw) {
   const message = raw?.message;
-  const contentItems = Array.isArray(message?.content) ? message.content : [];
+  const content = message?.content ?? message;
   const textChunks = [];
   const tags = [];
+  let toolUseCount = 0;
+  let thinkingCount = 0;
+  const toolNames = new Set();
 
-  for (const item of contentItems) {
-    if (!item || typeof item !== "object") continue;
-    if (item.type === "text" && typeof item.text === "string") {
-      textChunks.push(item.text.trim());
-    }
-    if (item.type === "thinking") tags.push("thinking");
-    if (item.type === "tool_use") tags.push(`tool:${item.name || "unknown"}`);
-    if (item.type === "tool_result") tags.push("tool_result");
+  if (typeof content === "string" && content.trim()) {
+    textChunks.push(content.trim());
   }
 
-  const summary = textChunks.join("\n").trim();
+  const contentItems = normalizeContentItems(content);
+  for (const item of contentItems) {
+    if (!item || typeof item !== "object") continue;
+
+    if (item.type === "text" && typeof item.text === "string" && item.text.trim()) {
+      textChunks.push(item.text.trim());
+    }
+
+    if (item.type === "tool_result") {
+      tags.push("tool_result");
+      if (typeof item.content === "string" && item.content.trim()) {
+        textChunks.push(item.content.trim());
+      }
+      if (Array.isArray(item.content)) {
+        for (const sub of item.content) {
+          if (typeof sub === "string" && sub.trim()) {
+            textChunks.push(sub.trim());
+          } else if (
+            sub &&
+            typeof sub === "object" &&
+            typeof sub.text === "string" &&
+            sub.text.trim()
+          ) {
+            textChunks.push(sub.text.trim());
+          }
+        }
+      }
+    }
+
+    if (item.type === "thinking") {
+      thinkingCount += 1;
+      tags.push("thinking");
+    }
+    if (item.type === "tool_use") {
+      toolUseCount += 1;
+      const toolName = item.name || "unknown";
+      toolNames.add(String(toolName));
+      tags.push(`tool:${toolName}`);
+    }
+  }
+
+  if (
+    textChunks.length === 0 &&
+    message &&
+    typeof message === "object" &&
+    !Array.isArray(message)
+  ) {
+    const fallback = extractTextFromUnknown(message);
+    if (fallback) textChunks.push(fallback);
+  }
+
+  const summary = truncateText(textChunks.join("\n").trim(), 380);
   if (summary) {
-    const short = summary.length > 380 ? `${summary.slice(0, 380)}...` : summary;
-    return { summary: short, tags };
+    const commandDisplay = extractCommandDisplay(summary);
+    return { summary: commandDisplay || summary, tags };
   }
 
   if (contentItems.some((item) => item.type === "tool_result")) {
     return { summary: "工具結果（可展開 Raw JSON）", tags };
   }
 
-  return { summary: "無可讀文字內容", tags };
+  if (toolUseCount > 0) {
+    const names = Array.from(toolNames).slice(0, 3).join(", ");
+    const suffix = names ? `：${names}${toolNames.size > 3 ? "..." : ""}` : "";
+    return { summary: `工具呼叫 ${toolUseCount} 次${suffix}`, tags };
+  }
+
+  if (thinkingCount > 0) {
+    return { summary: `Claude 內部思考事件 ${thinkingCount} 筆`, tags };
+  }
+
+  return { summary: "事件內容為結構化資料（可展開 Raw JSON）", tags };
 }
 
 function buildTechSummary(event) {
@@ -223,14 +311,16 @@ function normalizeEvents(events) {
 
   for (const event of events) {
     const rawType = event.raw?.type || event.eventType || "unknown";
+    const role = event.raw?.message?.role;
+    const roleType = role === "user" || role === "assistant" ? role : rawType;
 
-    if (rawType === "user" || rawType === "assistant") {
+    if (roleType === "user" || roleType === "assistant") {
       const text = extractTextSummary(event.raw);
       normalized.push({
-        kind: rawType === "user" ? "chat_user" : "chat_assistant",
+        kind: roleType === "user" ? "chat_user" : "chat_assistant",
         line: event.line,
         timestamp: event.timestamp,
-        title: rawType === "user" ? "使用者" : "Claude",
+        title: roleType === "user" ? "使用者" : "Claude",
         summary: text.summary,
         tags: text.tags,
         raw: event.raw,
