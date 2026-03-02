@@ -112,6 +112,7 @@ body {
 .list-btn:focus-visible,
 .tech-group-toggle:focus-visible,
 .load-more-btn:focus-visible,
+.expand-btn:focus-visible,
 details summary:focus-visible,
 .chat-only-toggle input:focus-visible {
   outline: 2px solid #74d5ae;
@@ -244,6 +245,17 @@ details summary:focus-visible,
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.45;
+}
+
+.expand-btn {
+  margin-top: 8px;
+  border: 1px solid #43637a;
+  background: #1a3144;
+  color: #d7ebf7;
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
 }
 
 .tag-row {

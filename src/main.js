@@ -1,6 +1,7 @@
 ﻿const { invoke } = window.__TAURI__.core;
 
 const TECH_PREVIEW_COUNT = 20;
+const CHAT_PREVIEW_LENGTH = 380;
 
 const state = {
   projects: [],
@@ -304,7 +305,13 @@ function extractTextSummary(raw) {
     if (fallback) textChunks.push(fallback);
   }
 
-  const summary = truncateText(textChunks.join("\n").trim(), 380);
+  if (textChunks.length === 0 && raw?.type === "tool_result") {
+    const fallback = extractTextFromUnknown(raw?.content) || extractTextFromUnknown(raw);
+    if (fallback) textChunks.push(fallback);
+    tags.push("tool_result");
+  }
+
+  const summary = textChunks.join("\n").trim();
   if (summary) {
     const commandDisplay = extractCommandDisplay(summary);
     return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails };
@@ -395,7 +402,12 @@ function normalizeEvents(events) {
   for (const event of events) {
     const rawType = event.raw?.type || event.eventType || "unknown";
     const role = event.raw?.message?.role;
-    const roleType = role === "user" || role === "assistant" ? role : rawType;
+    const roleType =
+      role === "user" || role === "assistant"
+        ? role
+        : rawType === "tool_result"
+          ? "assistant"
+          : rawType;
 
     if (roleType === "user" || roleType === "assistant") {
       const text = extractTextSummary(event.raw);
@@ -405,7 +417,10 @@ function normalizeEvents(events) {
         timestamp: event.timestamp,
         title: roleType === "user" ? "使用者" : "Claude",
         summary: text.summary,
-        tags: text.tags,
+        tags:
+          rawType === "tool_result" && !text.tags.includes("tool_result")
+            ? [...text.tags, "tool_result"]
+            : text.tags,
         thinkingDetails: text.thinkingDetails,
         toolUseDetails: text.toolUseDetails,
         raw: event.raw,
@@ -497,8 +512,26 @@ function renderChatItem(item) {
     createElement("span", "line", `line ${item.line}`),
   );
 
-  const body = createElement("p", "chat-text", item.summary);
+  const fullText = String(item.summary || "");
+  const isLong = fullText.length > CHAT_PREVIEW_LENGTH;
+  let expanded = false;
+  const body = createElement(
+    "p",
+    "chat-text",
+    isLong ? truncateText(fullText, CHAT_PREVIEW_LENGTH) : fullText,
+  );
   article.append(header, body);
+
+  if (isLong) {
+    const toggle = createElement("button", "expand-btn", "展開完整內容");
+    toggle.type = "button";
+    toggle.addEventListener("click", () => {
+      expanded = !expanded;
+      body.textContent = expanded ? fullText : truncateText(fullText, CHAT_PREVIEW_LENGTH);
+      toggle.textContent = expanded ? "收合內容" : "展開完整內容";
+    });
+    article.append(toggle);
+  }
 
   if (item.kind !== "chat_assistant" && item.tags.length > 0) {
     const tagRow = createElement("div", "tag-row");
