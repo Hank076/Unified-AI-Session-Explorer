@@ -444,8 +444,10 @@ function normalizeEvents(events) {
   for (const event of events) {
     const rawType = event.raw?.type || event.eventType || "unknown";
     const role = event.raw?.message?.role;
+    const contentItems = normalizeContentItems(event.raw?.message?.content);
+    const hasToolResultContent = contentItems.some((item) => item?.type === "tool_result");
     const roleType =
-      rawType === "tool_result"
+      rawType === "tool_result" || hasToolResultContent
         ? "assistant"
         : role === "user" || role === "assistant"
           ? role
