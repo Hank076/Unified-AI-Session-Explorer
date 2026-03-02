@@ -44,6 +44,26 @@ function escapeHtml(input) {
     .replaceAll("'", "&#039;");
 }
 
+function decodeProjectLabel(encodedName) {
+  const isWindows = navigator.platform.toLowerCase().includes("win");
+  const separator = isWindows ? "\\" : "/";
+
+  const driveMatch = encodedName.match(/^([A-Za-z])--(.+)$/);
+  if (driveMatch) {
+    const drive = `${driveMatch[1]}:${separator}`;
+    const rest = driveMatch[2]
+      .split("-")
+      .filter(Boolean)
+      .join(separator);
+    return `${drive}${rest}`;
+  }
+
+  return encodedName
+    .split("-")
+    .filter(Boolean)
+    .join(separator);
+}
+
 function renderProjects() {
   refs.projectsList.innerHTML = "";
   for (const project of state.projects) {
@@ -51,7 +71,7 @@ function renderProjects() {
     const button = document.createElement("button");
     button.className = "list-btn";
     if (state.selectedProjectPath === project.path) button.dataset.active = "true";
-    button.textContent = project.name;
+    button.textContent = decodeProjectLabel(project.name);
     button.title = project.path;
     button.addEventListener("click", () => selectProject(project.path));
     li.appendChild(button);
