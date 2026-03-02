@@ -1,6 +1,6 @@
 :root {
   --col-left: 280px;
-  --col-middle: 340px;
+  --col-middle: 224px;
   --font-main: "Noto Sans TC", "Segoe UI", sans-serif;
   --bg-app:
     radial-gradient(circle at 20% 10%, #243447, transparent 40%),
@@ -191,6 +191,14 @@ body {
   gap: 16px;
 }
 
+.header-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .theme-switch {
   display: inline-flex;
   gap: 4px;
@@ -199,6 +207,29 @@ body {
   border-radius: 10px;
   background: var(--theme-switch-bg);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.language-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.language-switch select {
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--control-text);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.language-switch select:focus-visible {
+  outline: 2px solid var(--control-border-active);
+  outline-offset: 1px;
 }
 
 .theme-btn {
@@ -284,7 +315,7 @@ body {
   gap: 8px;
 }
 
-.chat-only-toggle {
+.hide-system-events-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -292,7 +323,7 @@ body {
   color: var(--text-secondary);
 }
 
-.chat-only-toggle input {
+.hide-system-events-toggle input {
   accent-color: var(--accent);
 }
 
@@ -402,7 +433,7 @@ body {
 .expand-btn:focus-visible,
 .col-resizer:focus-visible,
 details summary:focus-visible,
-.chat-only-toggle input:focus-visible,
+.hide-system-events-toggle input:focus-visible,
 .theme-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -767,7 +798,9 @@ body.resizing-columns {
     align-items: stretch;
   }
 
-  .theme-switch {
-    align-self: flex-start;
+  .header-controls {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
   }
 }

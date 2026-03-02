@@ -1,14 +1,22 @@
-﻿import {
+import {
   buildThemeDatasetValue,
   getStoredThemeMode,
   resolveTheme,
 } from "./theme.js";
+import {
+  SUPPORTED_LOCALES,
+  detectLocale,
+  getLocaleLabel,
+  getStoredLocale,
+  t,
+} from "./i18n.js";
 
 const { invoke } = window.__TAURI__.core;
 
 const TECH_PREVIEW_COUNT = 20;
 const CHAT_PREVIEW_LENGTH = 380;
 const THEME_STORAGE_KEY = "claude_history_theme_mode";
+const LOCALE_STORAGE_KEY = "claude_history_locale";
 
 const state = {
   projects: [],
@@ -19,11 +27,12 @@ const state = {
   timelineItems: [],
   parseErrors: [],
   parseErrorCode: "",
-  showChatOnly: false,
+  hideSystemEvents: false,
   techViewState: {},
   entryExpandState: {},
   themeMode: "auto",
   resolvedTheme: "dark",
+  locale: "en-US",
 };
 
 const refs = {
@@ -38,11 +47,30 @@ const refs = {
   viewerMeta: null,
   viewerContent: null,
   status: null,
-  chatOnlyToggle: null,
-  chatOnlyWrap: null,
+  hideSystemEventsToggle: null,
+  hideSystemEventsWrap: null,
   pathTooltip: null,
   themeButtons: [],
+  localeSelect: null,
 };
+
+function tt(key, params) {
+  return t(state.locale, key, params);
+}
+
+function applyStaticTranslations() {
+  document.documentElement.lang = state.locale;
+  for (const node of document.querySelectorAll("[data-i18n]")) {
+    const key = node.getAttribute("data-i18n");
+    if (!key) continue;
+    node.textContent = tt(key);
+  }
+  for (const node of document.querySelectorAll("[data-i18n-aria-label]")) {
+    const key = node.getAttribute("data-i18n-aria-label");
+    if (!key) continue;
+    node.setAttribute("aria-label", tt(key));
+  }
+}
 
 function setStatus(message, type = "info") {
   refs.status.textContent = message || "";
@@ -50,10 +78,10 @@ function setStatus(message, type = "info") {
 }
 
 function formatError(code) {
-  if (code === "NOT_FOUND") return "找不到目標路徑或檔案。";
-  if (code === "READ_FAILED") return "讀取失敗，請確認權限與路徑。";
-  if (code === "PARSE_PARTIAL") return "部分 JSONL 行解析失敗，已顯示可用內容。";
-  return `發生未知錯誤：${code}`;
+  if (code === "NOT_FOUND") return tt("error.NOT_FOUND");
+  if (code === "READ_FAILED") return tt("error.READ_FAILED");
+  if (code === "PARSE_PARTIAL") return tt("error.PARSE_PARTIAL");
+  return tt("error.unknown", { code });
 }
 
 function clearViewer() {
@@ -61,10 +89,10 @@ function clearViewer() {
   state.parseErrors = [];
   state.parseErrorCode = "";
   state.techViewState = {};
-  refs.viewerTitle.textContent = "Viewer";
+  refs.viewerTitle.textContent = tt("panel.viewer");
   refs.viewerMeta.textContent = "";
-  setChatOnlyVisible(true);
-  refs.viewerContent.innerHTML = '<p class="placeholder">請先選擇專案與項目。</p>';
+  setHideSystemEventsVisible(true);
+  refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt("placeholder.select"))}</p>`;
 }
 
 function escapeHtml(input) {
@@ -185,6 +213,49 @@ function initThemeMode() {
   }
 }
 
+function readLocale() {
+  try {
+    const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
+    if (saved) return getStoredLocale(saved);
+  } catch {
+    // Ignore storage errors and use runtime locale.
+  }
+  return detectLocale(navigator.language);
+}
+
+function saveLocale(locale) {
+  try {
+    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  } catch {
+    // Ignore storage errors and keep runtime-only setting.
+  }
+}
+
+function setLocale(locale, { persist = true } = {}) {
+  state.locale = getStoredLocale(locale);
+  if (persist) saveLocale(state.locale);
+  if (refs.localeSelect) refs.localeSelect.value = state.locale;
+  applyStaticTranslations();
+  renderProjects();
+  renderEntries();
+  if (!state.selectedEntryPath) clearViewer();
+}
+
+function initLocaleSelector() {
+  if (!refs.localeSelect) return;
+  refs.localeSelect.innerHTML = "";
+  for (const locale of SUPPORTED_LOCALES) {
+    const option = document.createElement("option");
+    option.value = locale;
+    option.textContent = getLocaleLabel(locale);
+    refs.localeSelect.append(option);
+  }
+  setLocale(readLocale(), { persist: false });
+  refs.localeSelect.addEventListener("change", (event) => {
+    setLocale(event.target.value, { persist: true });
+  });
+}
+
 function isMarkdownPath(path) {
   return /\.md$/i.test(String(path || "").trim());
 }
@@ -232,10 +303,10 @@ function bindPathHover(element, text, options = {}) {
   element.addEventListener("blur", hide);
 }
 
-function setChatOnlyVisible(visible) {
-  if (!refs.chatOnlyWrap) return;
-  refs.chatOnlyWrap.style.display = visible ? "inline-flex" : "none";
-  refs.chatOnlyWrap.setAttribute("aria-hidden", visible ? "false" : "true");
+function setHideSystemEventsVisible(visible) {
+  if (!refs.hideSystemEventsWrap) return;
+  refs.hideSystemEventsWrap.style.display = visible ? "inline-flex" : "none";
+  refs.hideSystemEventsWrap.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
 function renderProjects() {
@@ -254,16 +325,16 @@ function renderProjects() {
 }
 
 function formatEntryTime(modifiedMs) {
-  if (!Number.isFinite(modifiedMs)) return "時間未知";
+  if (!Number.isFinite(modifiedMs)) return tt("common.timeUnknown");
   const date = new Date(modifiedMs);
-  if (Number.isNaN(date.getTime())) return "時間未知";
+  if (Number.isNaN(date.getTime())) return tt("common.timeUnknown");
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   const hh = String(date.getHours()).padStart(2, "0");
   const mi = String(date.getMinutes()).padStart(2, "0");
   const ss = String(date.getSeconds()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+  return `${yyyy}/${mm}/${dd} ${hh}:${mi}:${ss}`;
 }
 
 function formatBytes(sizeBytes) {
@@ -1001,8 +1072,8 @@ function normalizeEvents(events) {
         timestamp: event.timestamp,
         title: roleType === "user" ? "使用者" : "Claude",
         summary: text.summary,
-        chatOnlySummary: extractChatOnlySummary(event.raw),
-        chatOnlyToolSummary: (() => {
+        conversationSummary: extractChatOnlySummary(event.raw),
+        conversationToolSummary: (() => {
           const names = extractToolTagNames(text.tags);
           if (names.length === 0) return "";
           return `工具調用：${names.join(", ")}`;
@@ -1142,7 +1213,7 @@ function renderRawDetails(raw) {
 function renderChatItem(item) {
   const article = createElement("article", `event chat ${item.kind}`);
   const header = createElement("header", "event-header");
-  const visibleTags = state.showChatOnly
+  const visibleTags = state.hideSystemEvents
     ? item.tags.filter((tag) => tag !== "thinking" && tag !== "tool_result")
     : item.tags;
   const titleGroup = createElement("div", "title-group");
@@ -1161,8 +1232,8 @@ function renderChatItem(item) {
   );
 
   const fullText = String(
-    state.showChatOnly
-      ? item.chatOnlySummary || item.chatOnlyToolSummary || ""
+    state.hideSystemEvents
+      ? item.conversationSummary || item.conversationToolSummary || ""
       : item.summary || "",
   );
   const isLong = fullText.length > CHAT_PREVIEW_LENGTH;
@@ -1194,7 +1265,7 @@ function renderChatItem(item) {
   }
 
   if (
-    !state.showChatOnly &&
+    !state.hideSystemEvents &&
     item.kind === "chat_assistant" &&
     Array.isArray(item.thinkingDetails) &&
     item.thinkingDetails.length > 0
@@ -1230,7 +1301,7 @@ function renderChatItem(item) {
   }
 
   if (
-    !state.showChatOnly &&
+    !state.hideSystemEvents &&
     item.kind === "chat_assistant" &&
     Array.isArray(item.toolResultDetails) &&
     item.toolResultDetails.length > 0
@@ -1361,8 +1432,8 @@ function renderTimelineView() {
 
   for (const item of state.timelineItems) {
     if (item.kind.startsWith("chat")) {
-      if (state.showChatOnly && item.kind === "chat_assistant") {
-        if (!String(item.chatOnlySummary || item.chatOnlyToolSummary || "").trim()) {
+      if (state.hideSystemEvents && item.kind === "chat_assistant") {
+        if (!String(item.conversationSummary || item.conversationToolSummary || "").trim()) {
           continue;
         }
       }
@@ -1371,20 +1442,19 @@ function renderTimelineView() {
       continue;
     }
 
-    if (!state.showChatOnly && item.kind === "tech_group") {
+    if (!state.hideSystemEvents && item.kind === "tech_group") {
       refs.viewerContent.append(renderTechGroup(item));
       renderedCount += 1;
     }
   }
 
   if (renderedCount === 0) {
-    refs.viewerContent.innerHTML =
-      '<p class="placeholder">此 session 沒有可顯示的內容。</p>';
+    refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt("placeholder.emptySession"))}</p>`;
   }
 }
 
 function renderTimeline(payload) {
-  refs.viewerTitle.textContent = "Session Timeline";
+  refs.viewerTitle.textContent = tt("viewer.timeline");
   refs.viewerMeta.textContent = normalizeDisplayPath(payload.path);
 
   state.parseErrorCode = payload.errorCode || "";
@@ -1396,11 +1466,11 @@ function renderTimeline(payload) {
 }
 
 async function loadProjects() {
-  setStatus("載入專案中...");
+  setStatus(tt("status.loadingProjects"));
   try {
     state.projects = await invoke("list_projects");
     renderProjects();
-    setStatus(`已載入 ${state.projects.length} 個專案。`);
+    setStatus(tt("status.projectsLoaded", { count: state.projects.length }));
   } catch (errorCode) {
     setStatus(formatError(String(errorCode)), "error");
   }
@@ -1412,7 +1482,7 @@ async function selectProject(projectPath) {
   state.selectedEntryType = "";
   clearViewer();
   renderProjects();
-  setStatus("載入項目中...");
+  setStatus(tt("status.loadingEntries"));
 
   try {
     state.entries = await invoke("list_project_entries", {
@@ -1425,7 +1495,7 @@ async function selectProject(projectPath) {
       }
     }
     renderEntries();
-    setStatus(`已載入 ${state.entries.length} 個項目。`);
+    setStatus(tt("status.entriesLoaded", { count: state.entries.length }));
   } catch (errorCode) {
     state.entries = [];
     renderEntries();
@@ -1437,31 +1507,31 @@ async function selectEntry(entry) {
   state.selectedEntryPath = entry.path;
   state.selectedEntryType = entry.entryType;
   renderEntries();
-  setStatus("載入內容中...");
-  const hideChatOnly = entry.entryType === "memory_file";
-  setChatOnlyVisible(!hideChatOnly);
+  setStatus(tt("status.loadingContent"));
+  const hideSystemEventsControl = entry.entryType === "memory_file";
+  setHideSystemEventsVisible(!hideSystemEventsControl);
 
   try {
     if (entry.entryType === "memory_file") {
       const payload = await invoke("read_memory", { memoryPath: entry.path });
       renderMemory(payload);
-      setStatus("memory 檔案載入完成。", "info");
+      setStatus(tt("status.memoryLoaded"), "info");
       return;
     }
 
     const payload = await invoke("read_session_timeline", {
       sessionPath: entry.path,
     });
-    setChatOnlyVisible(true);
+    setHideSystemEventsVisible(true);
     renderTimeline(payload);
     if (payload.errorCode) {
       setStatus(formatError(payload.errorCode), "warn");
     } else {
-      setStatus("Session 載入完成。", "info");
+      setStatus(tt("status.sessionLoaded"), "info");
     }
   } catch (errorCode) {
     if (entry.entryType !== "memory_file") {
-      setChatOnlyVisible(true);
+      setHideSystemEventsVisible(true);
     }
     setStatus(formatError(String(errorCode)), "error");
   }
@@ -1479,10 +1549,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.viewerMeta = document.querySelector("#viewer-meta");
   refs.viewerContent = document.querySelector("#viewer-content");
   refs.status = document.querySelector("#status");
-  refs.chatOnlyToggle = document.querySelector("#chat-only-toggle");
-  refs.chatOnlyWrap = document.querySelector(".chat-only-toggle");
+  refs.hideSystemEventsToggle = document.querySelector("#hide-system-events-toggle");
+  refs.hideSystemEventsWrap = document.querySelector(".hide-system-events-toggle");
   refs.pathTooltip = document.querySelector("#path-tooltip");
   refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
+  refs.localeSelect = document.querySelector("#locale-select");
 
   for (const button of refs.themeButtons) {
     button.addEventListener("click", () => {
@@ -1490,12 +1561,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  refs.chatOnlyToggle.checked = true;
-  state.showChatOnly = true;
-  refs.chatOnlyToggle.addEventListener("change", (event) => {
-    state.showChatOnly = event.target.checked;
+  refs.hideSystemEventsToggle.checked = true;
+  state.hideSystemEvents = true;
+  refs.hideSystemEventsToggle.addEventListener("change", (event) => {
+    state.hideSystemEvents = event.target.checked;
     renderTimelineView();
   });
+  initLocaleSelector();
   initThemeMode();
   initColumnResizers();
 

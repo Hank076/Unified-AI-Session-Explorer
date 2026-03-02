@@ -1,5 +1,5 @@
 ﻿<!doctype html>
-<html lang="zh-Hant-TW">
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="styles.css" />
@@ -13,45 +13,51 @@
       <header class="app-header">
         <div class="app-header-row">
           <div>
-            <h1>Claude Projects Browser</h1>
-            <p>瀏覽 ~/.claude/projects、session 與 MEMORY.md</p>
+            <h1 data-i18n="app.name">Claude Projects Browser</h1>
+            <p data-i18n="app.subtitle">Browse ~/.claude/projects, sessions, and MEMORY.md</p>
           </div>
-          <div class="theme-switch" role="radiogroup" aria-label="主題模式">
-            <button
-              id="theme-auto"
-              class="theme-btn"
-              type="button"
-              data-theme-mode="auto"
-              role="radio"
-              aria-checked="false"
-            >
-              Auto
-            </button>
-            <button
-              id="theme-light"
-              class="theme-btn"
-              type="button"
-              data-theme-mode="light"
-              role="radio"
-              aria-checked="false"
-            >
-              Light
-            </button>
-            <button
-              id="theme-dark"
-              class="theme-btn"
-              type="button"
-              data-theme-mode="dark"
-              role="radio"
-              aria-checked="false"
-            >
-              Dark
-            </button>
+          <div class="header-controls">
+            <div class="theme-switch" role="radiogroup" data-i18n-aria-label="theme.mode" aria-label="Theme mode">
+              <button
+                id="theme-auto"
+                class="theme-btn"
+                type="button"
+                data-theme-mode="auto"
+                role="radio"
+                aria-checked="false"
+              >
+                <span data-i18n="theme.auto">Auto</span>
+              </button>
+              <button
+                id="theme-light"
+                class="theme-btn"
+                type="button"
+                data-theme-mode="light"
+                role="radio"
+                aria-checked="false"
+              >
+                <span data-i18n="theme.light">Light</span>
+              </button>
+              <button
+                id="theme-dark"
+                class="theme-btn"
+                type="button"
+                data-theme-mode="dark"
+                role="radio"
+                aria-checked="false"
+              >
+                <span data-i18n="theme.dark">Dark</span>
+              </button>
+            </div>
+            <label class="language-switch" for="locale-select">
+              <span data-i18n="language.label">Language</span>
+              <select id="locale-select" aria-label="Language"></select>
+            </label>
           </div>
         </div>
       </header>
 
-      <section id="panel-grid" class="panel-grid" aria-label="Projects Explorer">
+      <section id="panel-grid" class="panel-grid" data-i18n-aria-label="aria.projectsExplorer" aria-label="Projects Explorer">
         <aside id="projects-panel" class="panel" aria-label="Projects">
           <h2>Projects</h2>
           <ul id="projects-list" class="list"></ul>
@@ -62,11 +68,12 @@
           class="col-resizer"
           role="separator"
           aria-orientation="vertical"
-          aria-label="調整 Projects 與 Entries 欄寬"
+          data-i18n-aria-label="aria.resizeLeft"
+          aria-label="Resize Projects and Sessions columns"
         ></div>
 
-        <aside id="entries-panel" class="panel" aria-label="Entries">
-          <h2>Entries</h2>
+        <aside id="entries-panel" class="panel" aria-label="Sessions">
+          <h2 data-i18n="panel.session">Sessions</h2>
           <ul id="entries-list" class="list"></ul>
         </aside>
 
@@ -75,21 +82,22 @@
           class="col-resizer"
           role="separator"
           aria-orientation="vertical"
-          aria-label="調整 Entries 與 Viewer 欄寬"
+          data-i18n-aria-label="aria.resizeMiddle"
+          aria-label="Resize Sessions and Viewer columns"
         ></div>
 
         <section id="viewer-panel" class="panel viewer" aria-label="Viewer">
           <div class="viewer-header-row">
-            <h2 id="viewer-title">Viewer</h2>
-            <label class="chat-only-toggle" for="chat-only-toggle">
-              <input id="chat-only-toggle" type="checkbox" />
-              只看對話
+            <h2 id="viewer-title" data-i18n="panel.viewer">Viewer</h2>
+            <label class="hide-system-events-toggle" for="hide-system-events-toggle">
+              <input id="hide-system-events-toggle" type="checkbox" />
+              <span data-i18n="toggle.hideSystemEvents">Hide system events</span>
             </label>
           </div>
           <div id="viewer-meta" class="meta"></div>
           <div id="status" class="status" role="status" aria-live="polite"></div>
           <div id="viewer-content" class="viewer-content">
-            <p class="placeholder">請先選擇專案與項目。</p>
+            <p class="placeholder" data-i18n="placeholder.select">Select a project and entry to begin.</p>
           </div>
         </section>
       </section>
