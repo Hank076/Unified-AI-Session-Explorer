@@ -319,3 +319,74 @@ fn map_read_error(error: std::io::Error) -> String {
         _ => ERR_READ_FAILED.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("claude-projects-browser-{name}-{ts}"));
+        fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    fn write_file(path: &Path, content: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create parent");
+        }
+        fs::write(path, content).expect("write file");
+    }
+
+    #[test]
+    fn list_entries_memory_first_and_include_subagents() {
+        let root = unique_temp_dir("entries");
+        let project = root.join("demo");
+        fs::create_dir_all(&project).expect("create project");
+        write_file(&project.join("memory").join("MEMORY.md"), "# memory");
+        write_file(
+            &project.join("alpha.jsonl"),
+            "{\"timestamp\":\"2026-03-01T00:00:00Z\",\"content\":\"hello\"}",
+        );
+        write_file(&project.join("alpha").join("subagents").join("s1.jsonl"), "{\"content\":\"sub\"}");
+
+        let entries = list_project_entries(
+            project.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+        )
+        .expect("list entries");
+
+        assert!(!entries.is_empty());
+        assert_eq!(entries[0].entry_type, "memory");
+        assert!(entries.iter().any(|v| v.entry_type == "session"));
+        assert!(entries.iter().any(|v| v.entry_type == "subagent_session"));
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn parse_session_keeps_valid_events_and_reports_partial_error() {
+        let root = unique_temp_dir("timeline");
+        let session = root.join("mixed.jsonl");
+        write_file(
+            &session,
+            "{\"timestamp\":\"2026-03-01T00:00:00Z\",\"content\":\"ok1\"}\n{broken}\n{\"timestamp\":\"2026-03-02T00:00:00Z\",\"content\":\"ok2\"}\n",
+        );
+
+        let payload = read_session_timeline(
+            session.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+        )
+        .expect("parse session");
+
+        assert_eq!(payload.error_code.as_deref(), Some(ERR_PARSE_PARTIAL));
+        assert_eq!(payload.errors.len(), 1);
+        assert_eq!(payload.events.len(), 2);
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+}
