@@ -11,8 +11,44 @@
   <body>
     <main class="app">
       <header class="app-header">
-        <h1>Claude Projects Browser</h1>
-        <p>瀏覽 ~/.claude/projects、session 與 MEMORY.md</p>
+        <div class="app-header-row">
+          <div>
+            <h1>Claude Projects Browser</h1>
+            <p>瀏覽 ~/.claude/projects、session 與 MEMORY.md</p>
+          </div>
+          <div class="theme-switch" role="radiogroup" aria-label="主題模式">
+            <button
+              id="theme-auto"
+              class="theme-btn"
+              type="button"
+              data-theme-mode="auto"
+              role="radio"
+              aria-checked="false"
+            >
+              Auto
+            </button>
+            <button
+              id="theme-light"
+              class="theme-btn"
+              type="button"
+              data-theme-mode="light"
+              role="radio"
+              aria-checked="false"
+            >
+              Light
+            </button>
+            <button
+              id="theme-dark"
+              class="theme-btn"
+              type="button"
+              data-theme-mode="dark"
+              role="radio"
+              aria-checked="false"
+            >
+              Dark
+            </button>
+          </div>
+        </div>
       </header>
 
       <section id="panel-grid" class="panel-grid" aria-label="Projects Explorer">
@@ -58,5 +94,6 @@
         </section>
       </section>
     </main>
+    <div id="path-tooltip" class="path-tooltip" role="tooltip" hidden></div>
   </body>
 </html>

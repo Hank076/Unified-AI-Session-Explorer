@@ -96,17 +96,31 @@ pub fn list_project_entries(
     }
 
     let mut entries = Vec::new();
-    let memory_path = project.join("memory").join("MEMORY.md");
-    if memory_path.is_file() {
-        let (modified_ms, size_bytes) = get_file_metadata(&memory_path);
-        entries.push(Entry {
-            entry_type: "memory".to_string(),
-            label: "MEMORY.md".to_string(),
-            path: memory_path.to_string_lossy().to_string(),
-            parent_session: None,
-            modified_ms,
-            size_bytes,
+    let memory_dir = project.join("memory");
+    if memory_dir.is_dir() {
+        let mut memory_files = Vec::new();
+        collect_files_recursive(&memory_dir, &mut memory_files)?;
+        memory_files.sort_by_key(|path| {
+            path.to_string_lossy()
+                .to_string()
+                .to_lowercase()
         });
+
+        for memory_file in memory_files {
+            let label = memory_file
+                .file_name()
+                .map(|v| v.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let (modified_ms, size_bytes) = get_file_metadata(&memory_file);
+            entries.push(Entry {
+                entry_type: "memory_file".to_string(),
+                label,
+                path: memory_file.to_string_lossy().to_string(),
+                parent_session: None,
+                modified_ms,
+                size_bytes,
+            });
+        }
     }
 
     let mut sessions: Vec<PathBuf> = fs::read_dir(&project)
@@ -296,6 +310,19 @@ fn has_jsonl_extension(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn collect_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    for item in fs::read_dir(dir).map_err(map_read_error)? {
+        let item = item.map_err(map_read_error)?;
+        let path = item.path();
+        if path.is_dir() {
+            collect_files_recursive(&path, out)?;
+        } else if path.is_file() {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
 fn resolve_root_path(base_path: Option<&str>) -> Result<PathBuf, String> {
     let root = if let Some(path) = base_path {
         PathBuf::from(path)
@@ -388,7 +415,7 @@ mod tests {
         .expect("list entries");
 
         assert!(!entries.is_empty());
-        assert_eq!(entries[0].entry_type, "memory");
+        assert_eq!(entries[0].entry_type, "memory_file");
         assert!(entries.iter().any(|v| v.entry_type == "session"));
         assert!(entries.iter().any(|v| v.entry_type == "subagent_session"));
 

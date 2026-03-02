@@ -1,7 +1,14 @@
-﻿const { invoke } = window.__TAURI__.core;
+﻿import {
+  buildThemeDatasetValue,
+  getStoredThemeMode,
+  resolveTheme,
+} from "./theme.js";
+
+const { invoke } = window.__TAURI__.core;
 
 const TECH_PREVIEW_COUNT = 20;
 const CHAT_PREVIEW_LENGTH = 380;
+const THEME_STORAGE_KEY = "claude_history_theme_mode";
 
 const state = {
   projects: [],
@@ -14,6 +21,9 @@ const state = {
   parseErrorCode: "",
   showChatOnly: false,
   techViewState: {},
+  entryExpandState: {},
+  themeMode: "auto",
+  resolvedTheme: "dark",
 };
 
 const refs = {
@@ -29,6 +39,9 @@ const refs = {
   viewerContent: null,
   status: null,
   chatOnlyToggle: null,
+  chatOnlyWrap: null,
+  pathTooltip: null,
+  themeButtons: [],
 };
 
 function setStatus(message, type = "info") {
@@ -50,6 +63,7 @@ function clearViewer() {
   state.techViewState = {};
   refs.viewerTitle.textContent = "Viewer";
   refs.viewerMeta.textContent = "";
+  setChatOnlyVisible(true);
   refs.viewerContent.innerHTML = '<p class="placeholder">請先選擇專案與項目。</p>';
 }
 
@@ -82,6 +96,152 @@ function decodeProjectLabel(encodedName) {
     .join(separator);
 }
 
+function normalizeDisplayPath(path) {
+  const isWindows = navigator.platform.toLowerCase().includes("win");
+  let value = String(path || "");
+  if (isWindows) {
+    value = value.replace(/^\\\\\?\\/, "");
+    value = value.replace(/^\/\/\?\//, "");
+    return value.replaceAll("/", "\\");
+  }
+  return value.replaceAll("\\", "/");
+}
+
+function getSystemPrefersDark() {
+  try {
+    return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? true;
+  } catch {
+    return true;
+  }
+}
+
+function readThemeMode() {
+  try {
+    return getStoredThemeMode(localStorage.getItem(THEME_STORAGE_KEY));
+  } catch {
+    return "auto";
+  }
+}
+
+function saveThemeMode(mode) {
+  try {
+    if (mode === "auto") {
+      localStorage.removeItem(THEME_STORAGE_KEY);
+    } else {
+      localStorage.setItem(THEME_STORAGE_KEY, mode);
+    }
+  } catch {
+    // Ignore storage errors and keep runtime-only setting.
+  }
+}
+
+function updateThemeButtons() {
+  for (const button of refs.themeButtons) {
+    const active = button.dataset.themeMode === state.themeMode;
+    button.dataset.active = active ? "true" : "false";
+    button.setAttribute("aria-checked", active ? "true" : "false");
+  }
+}
+
+function resolveAndApplyTheme() {
+  const resolvedTheme = resolveTheme({
+    mode: state.themeMode,
+    systemPrefersDark: getSystemPrefersDark(),
+  });
+  const datasetValue = buildThemeDatasetValue(resolvedTheme);
+  document.documentElement.dataset.theme = datasetValue;
+  state.resolvedTheme = datasetValue;
+  updateThemeButtons();
+}
+
+function setThemeMode(mode, { persist = true } = {}) {
+  state.themeMode = getStoredThemeMode(mode);
+  if (persist) saveThemeMode(state.themeMode);
+  resolveAndApplyTheme();
+}
+
+function initThemeMode() {
+  state.themeMode = readThemeMode();
+  resolveAndApplyTheme();
+
+  let mediaQuery = null;
+  try {
+    mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  } catch {
+    mediaQuery = null;
+  }
+  if (!mediaQuery) return;
+
+  const onSystemThemeChange = () => {
+    if (state.themeMode === "auto") {
+      resolveAndApplyTheme();
+    }
+  };
+
+  if (typeof mediaQuery.addEventListener === "function") {
+    mediaQuery.addEventListener("change", onSystemThemeChange);
+  } else if (typeof mediaQuery.addListener === "function") {
+    mediaQuery.addListener(onSystemThemeChange);
+  }
+}
+
+function isMarkdownPath(path) {
+  return /\.md$/i.test(String(path || "").trim());
+}
+
+function bindPathHover(element, text, options = {}) {
+  if (!element || !refs.pathTooltip) return;
+  const displayPath = String(text || "");
+  const delayMs = Number.isFinite(options.delayMs) ? options.delayMs : 0;
+  element.title = displayPath;
+  let timerId = null;
+
+  const showNow = (event) => {
+    refs.pathTooltip.hidden = false;
+    refs.pathTooltip.textContent = displayPath;
+    move(event);
+  };
+  const show = (event) => {
+    if (timerId) window.clearTimeout(timerId);
+    if (delayMs <= 0) {
+      showNow(event);
+      return;
+    }
+    timerId = window.setTimeout(() => {
+      showNow(event);
+      timerId = null;
+    }, delayMs);
+  };
+  const hide = () => {
+    if (timerId) {
+      window.clearTimeout(timerId);
+      timerId = null;
+    }
+    refs.pathTooltip.hidden = true;
+  };
+  const move = (event) => {
+    if (!event || refs.pathTooltip.hidden) return;
+    const offset = 14;
+    refs.pathTooltip.style.left = `${event.clientX + offset}px`;
+    refs.pathTooltip.style.top = `${event.clientY + offset}px`;
+  };
+
+  element.addEventListener("mouseenter", show);
+  element.addEventListener("mousemove", move);
+  element.addEventListener("mouseleave", hide);
+  element.addEventListener("blur", hide);
+}
+
+function setChatOnlyVisible(visible) {
+  if (!refs.chatOnlyWrap) return;
+  refs.chatOnlyWrap.style.display = visible ? "inline-flex" : "none";
+  refs.chatOnlyWrap.setAttribute("aria-hidden", visible ? "false" : "true");
+  if (!visible) {
+    refs.chatOnlyToggle.checked = false;
+    state.showChatOnly = false;
+  }
+}
+
 function renderProjects() {
   refs.projectsList.innerHTML = "";
   for (const project of state.projects) {
@@ -90,7 +250,7 @@ function renderProjects() {
     button.className = "list-btn";
     if (state.selectedProjectPath === project.path) button.dataset.active = "true";
     button.textContent = decodeProjectLabel(project.name);
-    button.title = project.path;
+    button.removeAttribute("title");
     button.addEventListener("click", () => selectProject(project.path));
     li.appendChild(button);
     refs.projectsList.appendChild(li);
@@ -119,36 +279,118 @@ function formatBytes(sizeBytes) {
 
 function renderEntries() {
   refs.entriesList.innerHTML = "";
+  const memoryEntries = state.entries
+    .filter((entry) => entry.entryType === "memory_file")
+    .sort((a, b) => {
+      const aIsMain = isTopMemoryFile(a.path, a.label);
+      const bIsMain = isTopMemoryFile(b.path, b.label);
+      if (aIsMain !== bIsMain) return aIsMain ? -1 : 1;
+      return String(a.label || "").localeCompare(String(b.label || ""), "zh-TW");
+    });
+  const sessionEntries = state.entries.filter((entry) => entry.entryType === "session");
+  const subagentsByParent = new Map();
+
   for (const entry of state.entries) {
+    if (entry.entryType !== "subagent_session" || !entry.parentSession) continue;
+    if (!subagentsByParent.has(entry.parentSession)) {
+      subagentsByParent.set(entry.parentSession, []);
+    }
+    subagentsByParent.get(entry.parentSession).push(entry);
+  }
+
+  for (const entry of memoryEntries) {
     const li = document.createElement("li");
-    const button = document.createElement("button");
-    button.className = "list-btn entry-btn";
-    button.dataset.entryType = entry.entryType;
-    button.dataset.subagent = entry.entryType === "subagent_session" ? "true" : "false";
-
-    const timeLabel = formatEntryTime(entry.modifiedMs);
-    const primaryText =
-      entry.entryType === "subagent_session" ? `↳ ${timeLabel}` : timeLabel;
-    const secondaryParts = [formatBytes(entry.sizeBytes)];
-    if (entry.entryType === "memory") secondaryParts.push("MEMORY");
-    if (entry.entryType === "session") secondaryParts.push("session");
-    if (entry.entryType === "subagent_session") secondaryParts.push("subagent");
-
-    const primary = createElement("div", "entry-primary", primaryText);
-    const secondary = createElement("div", "entry-secondary", secondaryParts.join(" · "));
-    button.append(primary, secondary);
-
-    button.title = `${entry.label}\n${entry.path}`;
-    if (state.selectedEntryPath === entry.path) button.dataset.active = "true";
-    button.addEventListener("click", () => selectEntry(entry));
-    li.appendChild(button);
+    li.appendChild(createEntryButton(entry, { primaryText: entry.label, typeLabel: "memory" }));
     refs.entriesList.appendChild(li);
+  }
+
+  if (memoryEntries.length > 0 && sessionEntries.length > 0) {
+    const divider = document.createElement("li");
+    divider.className = "entries-divider";
+    divider.setAttribute("aria-hidden", "true");
+    refs.entriesList.appendChild(divider);
+  }
+
+  for (const entry of sessionEntries) {
+    const sessionStem = String(entry.label || "").replace(/\.jsonl$/i, "");
+    const children = subagentsByParent.get(sessionStem) || [];
+    const hasChildren = children.length > 0;
+    const expanded = hasChildren ? Boolean(state.entryExpandState[sessionStem]) : false;
+
+    const li = document.createElement("li");
+    const row = createElement("div", "entry-row");
+    if (hasChildren) row.dataset.hasChildren = "true";
+
+    row.appendChild(createEntryButton(entry, { typeLabel: "session", hasChildren }));
+    if (hasChildren) {
+      const toggle = createElement("button", "entry-toggle", expanded ? "▾" : "▸");
+      toggle.type = "button";
+      toggle.title = expanded ? "收合 subagent" : "展開 subagent";
+      toggle.setAttribute("aria-label", toggle.title);
+      toggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        state.entryExpandState[sessionStem] = !expanded;
+        renderEntries();
+      });
+      row.appendChild(toggle);
+    }
+    li.appendChild(row);
+    refs.entriesList.appendChild(li);
+
+    if (!expanded) continue;
+    for (const child of children) {
+      const childLi = document.createElement("li");
+      childLi.appendChild(
+        createEntryButton(child, {
+          primaryText: `↳ ${formatEntryTime(child.modifiedMs)}`,
+          typeLabel: "subagent",
+          isSubagent: true,
+        }),
+      );
+      refs.entriesList.appendChild(childLi);
+    }
   }
 }
 
+function createEntryButton(
+  entry,
+  {
+    primaryText = formatEntryTime(entry.modifiedMs),
+    typeLabel = "",
+    isSubagent = false,
+    hasChildren = false,
+  } = {},
+) {
+  const button = document.createElement("button");
+  button.className = "list-btn entry-btn";
+  button.dataset.entryType = entry.entryType;
+  button.dataset.subagent = isSubagent ? "true" : "false";
+  if (hasChildren) button.dataset.hasChildren = "true";
+
+  const secondaryParts = [formatBytes(entry.sizeBytes)];
+  if (typeLabel) secondaryParts.push(typeLabel);
+
+  const primary = createElement("div", "entry-primary", primaryText);
+  const secondary = createElement("div", "entry-secondary", secondaryParts.join(" · "));
+  button.append(primary, secondary);
+
+  bindPathHover(button, entry.label, { delayMs: 1600 });
+  if (state.selectedEntryPath === entry.path) button.dataset.active = "true";
+  button.addEventListener("click", () => selectEntry(entry));
+  return button;
+}
+
+function isTopMemoryFile(path, label) {
+  const fileName = String(label || "").toLowerCase();
+  if (fileName !== "memory.md") return false;
+  return /[\\/]memory[\\/]memory\.md$/i.test(String(path || ""));
+}
+
 function renderMemory(payload) {
-  refs.viewerTitle.textContent = "MEMORY.md";
-  refs.viewerMeta.textContent = payload.path;
+  const fileName = String(payload.path || "").split(/[\\/]/).pop() || "memory";
+  refs.viewerTitle.textContent = fileName;
+  refs.viewerMeta.textContent = normalizeDisplayPath(payload.path);
   refs.viewerContent.innerHTML = `<pre class="memory-block">${escapeHtml(payload.content)}</pre>`;
 }
 
@@ -895,7 +1137,7 @@ function renderTimelineView() {
 
 function renderTimeline(payload) {
   refs.viewerTitle.textContent = "Session Timeline";
-  refs.viewerMeta.textContent = payload.path;
+  refs.viewerMeta.textContent = normalizeDisplayPath(payload.path);
 
   state.parseErrorCode = payload.errorCode || "";
   state.parseErrors = Array.isArray(payload.errors) ? payload.errors : [];
@@ -928,6 +1170,12 @@ async function selectProject(projectPath) {
     state.entries = await invoke("list_project_entries", {
       projectPath,
     });
+    state.entryExpandState = {};
+    for (const entry of state.entries) {
+      if (entry.entryType === "subagent_session" && entry.parentSession) {
+        state.entryExpandState[entry.parentSession] = false;
+      }
+    }
     renderEntries();
     setStatus(`已載入 ${state.entries.length} 個項目。`);
   } catch (errorCode) {
@@ -942,12 +1190,13 @@ async function selectEntry(entry) {
   state.selectedEntryType = entry.entryType;
   renderEntries();
   setStatus("載入內容中...");
+  setChatOnlyVisible(!isMarkdownPath(entry.path));
 
   try {
-    if (entry.entryType === "memory") {
+    if (entry.entryType === "memory_file") {
       const payload = await invoke("read_memory", { memoryPath: entry.path });
       renderMemory(payload);
-      setStatus("MEMORY.md 載入完成。", "info");
+      setStatus("memory 檔案載入完成。", "info");
       return;
     }
 
@@ -978,13 +1227,25 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.viewerContent = document.querySelector("#viewer-content");
   refs.status = document.querySelector("#status");
   refs.chatOnlyToggle = document.querySelector("#chat-only-toggle");
+  refs.chatOnlyWrap = document.querySelector(".chat-only-toggle");
+  refs.pathTooltip = document.querySelector("#path-tooltip");
+  refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
+
+  for (const button of refs.themeButtons) {
+    button.addEventListener("click", () => {
+      setThemeMode(button.dataset.themeMode, { persist: true });
+    });
+  }
 
   refs.chatOnlyToggle.addEventListener("change", (event) => {
     state.showChatOnly = event.target.checked;
     renderTimelineView();
   });
+  initThemeMode();
   initColumnResizers();
 
   clearViewer();
   await loadProjects();
 });
+
+
