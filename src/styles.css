@@ -287,6 +287,20 @@ details summary:focus-visible,
   padding: 8px;
 }
 
+.assistant-fold {
+  margin-top: 10px;
+  border: 1px solid #355165;
+  border-radius: 8px;
+  background: #0f1d29;
+  padding: 6px 8px;
+}
+
+.assistant-fold-summary {
+  cursor: pointer;
+  color: #9fd2e8;
+  font-size: 12px;
+}
+
 .assistant-subtitle {
   margin: 0 0 6px;
   font-size: 12px;

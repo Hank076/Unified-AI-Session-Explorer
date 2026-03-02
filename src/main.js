@@ -233,6 +233,38 @@ function buildToolUseDetail(item) {
   };
 }
 
+function extractToolResultDetail(item, index = 1) {
+  const lines = [];
+  if (!item || item.type !== "tool_result") return null;
+
+  const content = item.content;
+  if (typeof content === "string" && content.trim()) {
+    lines.push(content.trim());
+  } else if (Array.isArray(content)) {
+    for (const sub of content) {
+      if (typeof sub === "string" && sub.trim()) {
+        lines.push(sub.trim());
+      } else if (
+        sub &&
+        typeof sub === "object" &&
+        typeof sub.text === "string" &&
+        sub.text.trim()
+      ) {
+        lines.push(sub.text.trim());
+      }
+    }
+  }
+
+  if (lines.length === 0 && typeof content === "object" && content !== null) {
+    lines.push("結構化工具結果（可展開 Raw JSON）");
+  }
+
+  return {
+    title: `工具結果 #${index}`,
+    lines: lines.length > 0 ? lines : ["工具結果無可讀文字內容"],
+  };
+}
+
 function extractTextSummary(raw) {
   const message = raw?.message;
   const content = message?.content ?? message;
@@ -243,6 +275,7 @@ function extractTextSummary(raw) {
   const toolNames = new Set();
   const thinkingDetails = [];
   const toolUseDetails = [];
+  const toolResultDetails = [];
 
   if (typeof content === "string" && content.trim()) {
     textChunks.push(content.trim());
@@ -262,23 +295,8 @@ function extractTextSummary(raw) {
 
     if (item.type === "tool_result") {
       tags.push("tool_result");
-      if (typeof item.content === "string" && item.content.trim()) {
-        textChunks.push(item.content.trim());
-      }
-      if (Array.isArray(item.content)) {
-        for (const sub of item.content) {
-          if (typeof sub === "string" && sub.trim()) {
-            textChunks.push(sub.trim());
-          } else if (
-            sub &&
-            typeof sub === "object" &&
-            typeof sub.text === "string" &&
-            sub.text.trim()
-          ) {
-            textChunks.push(sub.text.trim());
-          }
-        }
-      }
+      const detail = extractToolResultDetail(item, toolResultDetails.length + 1);
+      if (detail) toolResultDetails.push(detail);
     }
 
     if (item.type === "thinking") {
@@ -306,32 +324,56 @@ function extractTextSummary(raw) {
   }
 
   if (textChunks.length === 0 && raw?.type === "tool_result") {
-    const fallback = extractTextFromUnknown(raw?.content) || extractTextFromUnknown(raw);
-    if (fallback) textChunks.push(fallback);
     tags.push("tool_result");
+    const detail = extractToolResultDetail({ type: "tool_result", content: raw?.content }, 1);
+    if (detail) toolResultDetails.push(detail);
   }
 
   const summary = textChunks.join("\n").trim();
   if (summary) {
     const commandDisplay = extractCommandDisplay(summary);
-    return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails };
+    return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
   }
 
   if (contentItems.some((item) => item.type === "tool_result")) {
-    return { summary: "工具結果（可展開 Raw JSON）", tags, thinkingDetails, toolUseDetails };
+    return {
+      summary: "工具結果（可展開查看）",
+      tags,
+      thinkingDetails,
+      toolUseDetails,
+      toolResultDetails,
+    };
   }
 
   if (toolUseCount > 0) {
     const names = Array.from(toolNames).slice(0, 3).join(", ");
     const suffix = names ? `：${names}${toolNames.size > 3 ? "..." : ""}` : "";
-    return { summary: `工具呼叫 ${toolUseCount} 次${suffix}`, tags, thinkingDetails, toolUseDetails };
+    return {
+      summary: `工具呼叫 ${toolUseCount} 次${suffix}`,
+      tags,
+      thinkingDetails,
+      toolUseDetails,
+      toolResultDetails,
+    };
   }
 
   if (thinkingCount > 0) {
-    return { summary: `Claude 內部思考事件 ${thinkingCount} 筆`, tags, thinkingDetails, toolUseDetails };
+    return {
+      summary: `Claude 內部思考事件 ${thinkingCount} 筆`,
+      tags,
+      thinkingDetails,
+      toolUseDetails,
+      toolResultDetails,
+    };
   }
 
-  return { summary: "事件內容為結構化資料（可展開 Raw JSON）", tags, thinkingDetails, toolUseDetails };
+  return {
+    summary: "事件內容為結構化資料（可展開 Raw JSON）",
+    tags,
+    thinkingDetails,
+    toolUseDetails,
+    toolResultDetails,
+  };
 }
 
 function buildTechSummary(event) {
@@ -403,10 +445,10 @@ function normalizeEvents(events) {
     const rawType = event.raw?.type || event.eventType || "unknown";
     const role = event.raw?.message?.role;
     const roleType =
-      role === "user" || role === "assistant"
-        ? role
-        : rawType === "tool_result"
-          ? "assistant"
+      rawType === "tool_result"
+        ? "assistant"
+        : role === "user" || role === "assistant"
+          ? role
           : rawType;
 
     if (roleType === "user" || roleType === "assistant") {
@@ -423,6 +465,7 @@ function normalizeEvents(events) {
             : text.tags,
         thinkingDetails: text.thinkingDetails,
         toolUseDetails: text.toolUseDetails,
+        toolResultDetails: text.toolResultDetails,
         raw: event.raw,
       });
       continue;
@@ -542,11 +585,15 @@ function renderChatItem(item) {
   }
 
   if (item.kind === "chat_assistant" && Array.isArray(item.thinkingDetails) && item.thinkingDetails.length > 0) {
-    const thinkingBox = createElement("section", "assistant-thinking");
-    thinkingBox.append(createElement("h4", "assistant-subtitle", "內部思考"));
+    const thinkingBox = createElement("details", "assistant-fold");
+    thinkingBox.append(
+      createElement("summary", "assistant-fold-summary", `內部思考（${item.thinkingDetails.length}）`),
+    );
+    const content = createElement("section", "assistant-thinking");
     for (const text of item.thinkingDetails.slice(0, 2)) {
-      thinkingBox.append(createElement("p", "assistant-thinking-text", truncateText(text, 500)));
+      content.append(createElement("p", "assistant-thinking-text", truncateText(text, 800)));
     }
+    thinkingBox.append(content);
     article.append(thinkingBox);
   }
 
@@ -562,6 +609,32 @@ function renderChatItem(item) {
       toolBox.append(card);
     }
     article.append(toolBox);
+  }
+
+  if (
+    item.kind === "chat_assistant" &&
+    Array.isArray(item.toolResultDetails) &&
+    item.toolResultDetails.length > 0
+  ) {
+    const resultBox = createElement("details", "assistant-fold");
+    resultBox.append(
+      createElement(
+        "summary",
+        "assistant-fold-summary",
+        `工具結果（${item.toolResultDetails.length}）`,
+      ),
+    );
+    const content = createElement("section", "assistant-tools");
+    for (const detail of item.toolResultDetails.slice(0, 4)) {
+      const card = createElement("div", "assistant-tool-card");
+      card.append(createElement("div", "assistant-tool-title", detail.title));
+      for (const line of detail.lines.slice(0, 6)) {
+        card.append(createElement("div", "assistant-tool-line", line));
+      }
+      content.append(card);
+    }
+    resultBox.append(content);
+    article.append(resultBox);
   }
 
   article.append(renderRawDetails(item.raw));
