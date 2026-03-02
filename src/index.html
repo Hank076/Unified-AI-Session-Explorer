@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Projects Browser</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <main class="app">
+      <header class="app-header">
+        <h1>Claude Projects Browser</h1>
+        <p>瀏覽 ~/.claude/projects、session 與 MEMORY.md</p>
+      </header>
+
+      <section class="panel-grid" aria-label="Projects Explorer">
+        <aside class="panel" aria-label="Projects">
+          <h2>Projects</h2>
+          <ul id="projects-list" class="list"></ul>
+        </aside>
+
+        <aside class="panel" aria-label="Entries">
+          <h2>Entries</h2>
+          <ul id="entries-list" class="list"></ul>
+        </aside>
+
+        <section class="panel viewer" aria-label="Viewer">
+          <h2 id="viewer-title">Viewer</h2>
+          <div id="viewer-meta" class="meta"></div>
+          <div id="status" class="status" role="status" aria-live="polite"></div>
+          <div id="viewer-content" class="viewer-content">
+            <p class="placeholder">請先選擇專案與項目。</p>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
