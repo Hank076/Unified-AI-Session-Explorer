@@ -292,6 +292,14 @@ function extractChatOnlySummary(raw) {
   return chunks.join("\n").trim();
 }
 
+function extractToolTagNames(tags) {
+  if (!Array.isArray(tags)) return [];
+  return tags
+    .filter((tag) => typeof tag === "string" && tag.startsWith("tool:"))
+    .map((tag) => tag.slice(5))
+    .filter(Boolean);
+}
+
 function extractTextSummary(raw) {
   const message = raw?.message;
   const content = message?.content ?? message;
@@ -489,6 +497,11 @@ function normalizeEvents(events) {
         title: roleType === "user" ? "使用者" : "Claude",
         summary: text.summary,
         chatOnlySummary: extractChatOnlySummary(event.raw),
+        chatOnlyToolSummary: (() => {
+          const names = extractToolTagNames(text.tags);
+          if (names.length === 0) return "";
+          return `工具調用：${names.join(", ")}`;
+        })(),
         tags:
           rawType === "tool_result" && !text.tags.includes("tool_result")
             ? [...text.tags, "tool_result"]
@@ -643,7 +656,9 @@ function renderChatItem(item) {
   );
 
   const fullText = String(
-    state.showChatOnly ? item.chatOnlySummary || "" : item.summary || "",
+    state.showChatOnly
+      ? item.chatOnlySummary || item.chatOnlyToolSummary || ""
+      : item.summary || "",
   );
   const isLong = fullText.length > CHAT_PREVIEW_LENGTH;
   let expanded = false;
@@ -831,7 +846,7 @@ function renderTimelineView() {
   for (const item of state.timelineItems) {
     if (item.kind.startsWith("chat")) {
       if (state.showChatOnly && item.kind === "chat_assistant") {
-        if (!String(item.chatOnlySummary || "").trim()) {
+        if (!String(item.chatOnlySummary || item.chatOnlyToolSummary || "").trim()) {
           continue;
         }
       }
