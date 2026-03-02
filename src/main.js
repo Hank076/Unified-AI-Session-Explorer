@@ -398,7 +398,7 @@ function renderEntries() {
     if (hasChildren) {
       const toggle = createElement("button", "entry-toggle", expanded ? "▾" : "▸");
       toggle.type = "button";
-      toggle.title = expanded ? "收合 subagent" : "展開 subagent";
+      toggle.title = expanded ? tt("action.collapseSubagent") : tt("action.expandSubagent");
       toggle.setAttribute("aria-label", toggle.title);
       toggle.addEventListener("click", (event) => {
         event.preventDefault();
@@ -416,7 +416,7 @@ function renderEntries() {
       const childLi = document.createElement("li");
       childLi.appendChild(
         createEntryButton(child, {
-          primaryText: `↳ ${formatEntryTime(child.modifiedMs)}`,
+          primaryText: tt("entry.childPrefix", { time: formatEntryTime(child.modifiedMs) }),
           typeLabel: "subagent",
           isSubagent: true,
         }),
@@ -522,24 +522,27 @@ function buildToolUseDetail(item) {
   if (!item || item.type !== "tool_use") return null;
   const toolName = String(item.name || "unknown");
   const input = item.input && typeof item.input === "object" ? item.input : {};
+  const fallbackInput = [tt("tool.fallback.input")];
 
   if (toolName === "AskUserQuestion") {
     const questions = parseAskUserQuestions(input);
     const lines = [];
     for (const q of questions) {
       const question = typeof q?.question === "string" ? q.question.trim() : "";
-      if (question) lines.push(`Q: ${question}`);
+      if (question) lines.push(tt("tool.label.question", { text: question }));
       if (Array.isArray(q?.options) && q.options.length > 0) {
         const labels = q.options
           .map((opt) => (typeof opt?.label === "string" ? opt.label.trim() : ""))
           .filter(Boolean);
-        if (labels.length > 0) lines.push(`選項: ${labels.join(" / ")}`);
+        if (labels.length > 0) {
+          lines.push(tt("tool.label.options", { options: labels.join(" / ") }));
+        }
       }
     }
     return {
       toolName,
-      title: "向使用者提問",
-      lines: lines.length > 0 ? lines : ["questions 結構存在，但無可讀內容"],
+      title: tt("tool.askUserQuestion.title"),
+      lines: lines.length > 0 ? lines : [tt("tool.fallback.questions")],
     };
   }
 
@@ -547,12 +550,12 @@ function buildToolUseDetail(item) {
     const command = typeof input.command === "string" ? input.command.trim() : "";
     const description = typeof input.description === "string" ? input.description.trim() : "";
     const lines = [];
-    if (description) lines.push(`描述: ${description}`);
-    if (command) lines.push(`命令: ${command}`);
+    if (description) lines.push(tt("tool.label.description", { text: description }));
+    if (command) lines.push(tt("tool.label.command", { text: command }));
     return {
       toolName,
-      title: "Bash 指令執行",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.bash.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -561,14 +564,19 @@ function buildToolUseDetail(item) {
     const offset = Number.isFinite(input.offset) ? input.offset : null;
     const limit = Number.isFinite(input.limit) ? input.limit : null;
     const lines = [];
-    if (filePath) lines.push(`檔案: ${filePath}`);
+    if (filePath) lines.push(tt("tool.label.file", { text: filePath }));
     if (offset !== null || limit !== null) {
-      lines.push(`範圍: offset=${offset ?? 0}, limit=${limit ?? "auto"}`);
+      lines.push(
+        tt("tool.label.range", {
+          offset: offset ?? 0,
+          limit: limit ?? "auto",
+        }),
+      );
     }
     return {
       toolName,
-      title: "檔案讀取",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.read.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -578,13 +586,13 @@ function buildToolUseDetail(item) {
     const description =
       typeof input.description === "string" ? input.description.trim() : "";
     const lines = [];
-    if (activeForm) lines.push(`目前階段: ${activeForm}`);
-    if (subject) lines.push(`主題: ${subject}`);
-    if (description) lines.push(`描述: ${description}`);
+    if (activeForm) lines.push(tt("tool.label.phase", { text: activeForm }));
+    if (subject) lines.push(tt("tool.label.subject", { text: subject }));
+    if (description) lines.push(tt("tool.label.description", { text: description }));
     return {
       toolName,
-      title: "任務建立",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.taskCreate.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -592,12 +600,12 @@ function buildToolUseDetail(item) {
     const pattern = typeof input.pattern === "string" ? input.pattern.trim() : "";
     const path = typeof input.path === "string" ? input.path.trim() : "";
     const lines = [];
-    if (pattern) lines.push(`Pattern: ${pattern}`);
-    if (path) lines.push(`Path: ${path}`);
+    if (pattern) lines.push(tt("tool.label.pattern", { text: pattern }));
+    if (path) lines.push(tt("tool.label.path", { text: path }));
     return {
       toolName,
-      title: "檔案樣式比對",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.glob.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -606,13 +614,13 @@ function buildToolUseDetail(item) {
     const path = typeof input.path === "string" ? input.path.trim() : "";
     const glob = typeof input.glob === "string" ? input.glob.trim() : "";
     const lines = [];
-    if (pattern) lines.push(`Pattern: ${pattern}`);
-    if (path) lines.push(`Path: ${path}`);
-    if (glob) lines.push(`Glob: ${glob}`);
+    if (pattern) lines.push(tt("tool.label.pattern", { text: pattern }));
+    if (path) lines.push(tt("tool.label.path", { text: path }));
+    if (glob) lines.push(tt("tool.label.glob", { text: glob }));
     return {
       toolName,
-      title: "內容關鍵字搜尋",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.grep.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -624,15 +632,15 @@ function buildToolUseDetail(item) {
       typeof input.description === "string" ? input.description.trim() : "";
     const activeForm = typeof input.activeForm === "string" ? input.activeForm.trim() : "";
     const lines = [];
-    if (taskId) lines.push(`Task ID: ${taskId}`);
-    if (status) lines.push(`狀態: ${status}`);
-    if (activeForm) lines.push(`目前階段: ${activeForm}`);
-    if (subject) lines.push(`主題: ${subject}`);
-    if (description) lines.push(`描述: ${description}`);
+    if (taskId) lines.push(tt("tool.label.taskId", { text: taskId }));
+    if (status) lines.push(tt("tool.label.status", { text: status }));
+    if (activeForm) lines.push(tt("tool.label.phase", { text: activeForm }));
+    if (subject) lines.push(tt("tool.label.subject", { text: subject }));
+    if (description) lines.push(tt("tool.label.description", { text: description }));
     return {
       toolName,
-      title: "任務更新",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.taskUpdate.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -640,12 +648,12 @@ function buildToolUseDetail(item) {
     const filter = typeof input.filter === "string" ? input.filter.trim() : "";
     const status = typeof input.status === "string" ? input.status.trim() : "";
     const lines = [];
-    if (filter) lines.push(`篩選: ${filter}`);
-    if (status) lines.push(`狀態: ${status}`);
+    if (filter) lines.push(tt("tool.label.filter", { text: filter }));
+    if (status) lines.push(tt("tool.label.status", { text: status }));
     return {
       toolName,
-      title: "任務清單查詢",
-      lines: lines.length > 0 ? lines : ["列出所有任務"],
+      title: tt("tool.taskList.title"),
+      lines: lines.length > 0 ? lines : [tt("tool.fallback.taskList")],
     };
   }
 
@@ -653,11 +661,11 @@ function buildToolUseDetail(item) {
     const taskId = typeof input.taskId === "string" ? input.taskId.trim() : "";
     const id = typeof input.id === "string" ? input.id.trim() : "";
     const lines = [];
-    if (taskId || id) lines.push(`Task ID: ${taskId || id}`);
+    if (taskId || id) lines.push(tt("tool.label.taskId", { text: taskId || id }));
     return {
       toolName,
-      title: "任務詳情查詢",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.taskGet.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -666,13 +674,13 @@ function buildToolUseDetail(item) {
     const oldString = typeof input.old_string === "string" ? input.old_string.trim() : "";
     const newString = typeof input.new_string === "string" ? input.new_string.trim() : "";
     const lines = [];
-    if (filePath) lines.push(`檔案: ${filePath}`);
-    if (oldString) lines.push(`舊內容: ${truncateText(oldString, 120)}`);
-    if (newString) lines.push(`新內容: ${truncateText(newString, 120)}`);
+    if (filePath) lines.push(tt("tool.label.file", { text: filePath }));
+    if (oldString) lines.push(tt("tool.label.oldContent", { text: truncateText(oldString, 120) }));
+    if (newString) lines.push(tt("tool.label.newContent", { text: truncateText(newString, 120) }));
     return {
       toolName,
-      title: "檔案局部編輯",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.edit.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -680,12 +688,12 @@ function buildToolUseDetail(item) {
     const filePath = typeof input.file_path === "string" ? input.file_path.trim() : "";
     const content = typeof input.content === "string" ? input.content : "";
     const lines = [];
-    if (filePath) lines.push(`檔案: ${filePath}`);
-    if (content) lines.push(`內容長度: ${content.length} 字元`);
+    if (filePath) lines.push(tt("tool.label.file", { text: filePath }));
+    if (content) lines.push(tt("tool.label.contentLength", { count: content.length }));
     return {
       toolName,
-      title: "檔案寫入/覆寫",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.write.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -693,12 +701,12 @@ function buildToolUseDetail(item) {
     const taskId = typeof input.taskId === "string" ? input.taskId.trim() : "";
     const shellId = typeof input.shellId === "string" ? input.shellId.trim() : "";
     const lines = [];
-    if (taskId) lines.push(`Task ID: ${taskId}`);
-    if (shellId) lines.push(`Shell ID: ${shellId}`);
+    if (taskId) lines.push(tt("tool.label.taskId", { text: taskId }));
+    if (shellId) lines.push(tt("tool.label.shellId", { text: shellId }));
     return {
       toolName,
-      title: "背景任務輸出讀取",
-      lines: lines.length > 0 ? lines : ["讀取背景任務輸出"],
+      title: tt("tool.taskOutput.title"),
+      lines: lines.length > 0 ? lines : [tt("tool.fallback.taskOutput")],
     };
   }
 
@@ -706,22 +714,22 @@ function buildToolUseDetail(item) {
     const skillName = typeof input.skillName === "string" ? input.skillName.trim() : "";
     const name = typeof input.name === "string" ? input.name.trim() : "";
     const lines = [];
-    if (skillName || name) lines.push(`Skill: ${skillName || name}`);
+    if (skillName || name) lines.push(tt("tool.label.skill", { text: skillName || name }));
     return {
       toolName,
-      title: "Skill 執行",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.skill.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
   if (toolName === "Agent") {
     const task = typeof input.task === "string" ? input.task.trim() : "";
     const lines = [];
-    if (task) lines.push(`任務: ${truncateText(task, 180)}`);
+    if (task) lines.push(tt("tool.label.task", { text: truncateText(task, 180) }));
     return {
       toolName,
-      title: "子代理執行",
-      lines: lines.length > 0 ? lines : ["啟動 sub-agent 任務"],
+      title: tt("tool.agent.title"),
+      lines: lines.length > 0 ? lines : [tt("tool.fallback.agent")],
     };
   }
 
@@ -729,56 +737,56 @@ function buildToolUseDetail(item) {
     const query = typeof input.query === "string" ? input.query.trim() : "";
     const domains = Array.isArray(input.domains) ? input.domains.join(", ") : "";
     const lines = [];
-    if (query) lines.push(`Query: ${query}`);
-    if (domains) lines.push(`Domains: ${domains}`);
+    if (query) lines.push(tt("tool.label.query", { text: query }));
+    if (domains) lines.push(tt("tool.label.domains", { text: domains }));
     return {
       toolName,
-      title: "網路搜尋",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.webSearch.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
   if (toolName === "WebFetch") {
     const url = typeof input.url === "string" ? input.url.trim() : "";
     const lines = [];
-    if (url) lines.push(`URL: ${url}`);
+    if (url) lines.push(tt("tool.label.url", { text: url }));
     return {
       toolName,
-      title: "網頁內容擷取",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.webFetch.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
   if (toolName === "MCPSearch") {
     const query = typeof input.query === "string" ? input.query.trim() : "";
     const lines = [];
-    if (query) lines.push(`Query: ${query}`);
+    if (query) lines.push(tt("tool.label.query", { text: query }));
     return {
       toolName,
-      title: "MCP 工具搜尋",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.mcpSearch.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
   if (toolName === "KillShell") {
     const shellId = typeof input.shell_id === "string" ? input.shell_id.trim() : "";
     const lines = [];
-    if (shellId) lines.push(`Shell ID: ${shellId}`);
+    if (shellId) lines.push(tt("tool.label.shellId", { text: shellId }));
     return {
       toolName,
-      title: "終止背景 Shell",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.killShell.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
   if (toolName === "ExitPlanMode") {
     const reason = typeof input.reason === "string" ? input.reason.trim() : "";
     const lines = [];
-    if (reason) lines.push(`原因: ${reason}`);
+    if (reason) lines.push(tt("tool.label.reason", { text: reason }));
     return {
       toolName,
-      title: "離開規劃模式",
-      lines: lines.length > 0 ? lines : ["提示使用者開始實作"],
+      title: tt("tool.exitPlanMode.title"),
+      lines: lines.length > 0 ? lines : [tt("tool.fallback.exitPlanMode")],
     };
   }
 
@@ -786,11 +794,11 @@ function buildToolUseDetail(item) {
     const notebookPath =
       typeof input.notebook_path === "string" ? input.notebook_path.trim() : "";
     const lines = [];
-    if (notebookPath) lines.push(`Notebook: ${notebookPath}`);
+    if (notebookPath) lines.push(tt("tool.label.notebook", { text: notebookPath }));
     return {
       toolName,
-      title: "Notebook 編輯",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.notebookEdit.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
@@ -798,19 +806,19 @@ function buildToolUseDetail(item) {
     const method = typeof input.method === "string" ? input.method.trim() : "";
     const path = typeof input.path === "string" ? input.path.trim() : "";
     const lines = [];
-    if (method) lines.push(`Method: ${method}`);
-    if (path) lines.push(`Path: ${path}`);
+    if (method) lines.push(tt("tool.label.method", { text: method }));
+    if (path) lines.push(tt("tool.label.path", { text: path }));
     return {
       toolName,
-      title: "語言伺服器分析",
-      lines: lines.length > 0 ? lines : ["input 結構存在，但無可讀內容"],
+      title: tt("tool.lsp.title"),
+      lines: lines.length > 0 ? lines : fallbackInput,
     };
   }
 
   return {
     toolName,
-    title: `工具調用: ${toolName}`,
-    lines: ["已記錄工具調用（可展開 Raw JSON 查看完整 input）"],
+    title: tt("tool.default.title", { name: toolName }),
+    lines: [tt("tool.fallback.default")],
   };
 }
 
@@ -837,14 +845,15 @@ function extractToolResultDetail(item, index = 1) {
   }
 
   if (lines.length === 0 && typeof content === "object" && content !== null) {
-    lines.push("結構化工具結果（可展開 Raw JSON）");
+    lines.push(tt("tool.result.structured"));
   }
 
   return {
-    title: `工具結果 #${index}`,
-    lines: lines.length > 0 ? lines : ["工具結果無可讀文字內容"],
+    title: tt("tool.result.title", { index }),
+    lines: lines.length > 0 ? lines : [tt("tool.result.empty")],
   };
 }
+
 
 function extractChatOnlySummary(raw) {
   if (raw?.type === "tool_result") return "";
@@ -940,7 +949,7 @@ function extractTextSummary(raw) {
     if (detail) toolResultDetails.push(detail);
   }
 
-  const summary = textChunks.join("\n").trim();
+    const summary = textChunks.join("\n").trim();
   if (summary) {
     const commandDisplay = extractCommandDisplay(summary);
     return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
@@ -948,7 +957,7 @@ function extractTextSummary(raw) {
 
   if (contentItems.some((item) => item.type === "tool_result")) {
     return {
-      summary: "工具結果（可展開查看）",
+      summary: tt("summary.toolResult"),
       tags,
       thinkingDetails,
       toolUseDetails,
@@ -958,9 +967,11 @@ function extractTextSummary(raw) {
 
   if (toolUseCount > 0) {
     const names = Array.from(toolNames).slice(0, 3).join(", ");
-    const suffix = names ? `：${names}${toolNames.size > 3 ? "..." : ""}` : "";
+    const suffix = names
+      ? tt("summary.toolUseNames", { names, more: toolNames.size > 3 ? "..." : "" })
+      : "";
     return {
-      summary: `工具呼叫 ${toolUseCount} 次${suffix}`,
+      summary: tt("summary.toolUseCount", { count: toolUseCount, suffix }),
       tags,
       thinkingDetails,
       toolUseDetails,
@@ -970,7 +981,7 @@ function extractTextSummary(raw) {
 
   if (thinkingCount > 0) {
     return {
-      summary: `Claude 內部思考事件 ${thinkingCount} 筆`,
+      summary: tt("summary.thinking", { count: thinkingCount }),
       tags,
       thinkingDetails,
       toolUseDetails,
@@ -979,7 +990,7 @@ function extractTextSummary(raw) {
   }
 
   return {
-    summary: "事件內容為結構化資料（可展開 Raw JSON）",
+    summary: tt("summary.structuredEvent"),
     tags,
     thinkingDetails,
     toolUseDetails,
@@ -997,7 +1008,7 @@ function buildTechSummary(event) {
       const hookName = raw.data?.hookName || "unknown";
       return {
         subtype: dataType,
-        summary: `Hook 進度：${hookName}`,
+        summary: tt("tech.hookProgress", { name: hookName }),
       };
     }
     if (dataType === "bash_progress") {
@@ -1005,17 +1016,17 @@ function buildTechSummary(event) {
       if (typeof lines === "number") {
         return {
           subtype: dataType,
-          summary: `命令執行進度：目前 ${lines} 行輸出`,
+          summary: tt("tech.bashProgress", { count: lines }),
         };
       }
       return {
         subtype: dataType,
-        summary: "命令執行進度更新",
+        summary: tt("tech.bashProgressUpdate"),
       };
     }
     return {
       subtype: dataType,
-      summary: `進度更新：${dataType}`,
+      summary: tt("tech.progressUpdate", { type: dataType }),
     };
   }
 
@@ -1023,33 +1034,34 @@ function buildTechSummary(event) {
     const subtype = raw.subtype || "system";
     if (subtype === "local_command") {
       const durationMs = raw.durationMs;
-      const suffix = typeof durationMs === "number" ? `（${durationMs}ms）` : "";
-      return { subtype, summary: `本機命令紀錄${suffix}` };
+      const suffix = typeof durationMs === "number" ? tt("tech.duration", { ms: durationMs }) : "";
+      return { subtype, summary: tt("tech.localCommand", { suffix }) };
     }
     if (subtype === "turn_duration") {
       const durationMs = raw.durationMs;
-      const suffix = typeof durationMs === "number" ? `（${durationMs}ms）` : "";
-      return { subtype, summary: `回合耗時${suffix}` };
+      const suffix = typeof durationMs === "number" ? tt("tech.duration", { ms: durationMs }) : "";
+      return { subtype, summary: tt("tech.turnDuration", { suffix }) };
     }
-    return { subtype, summary: `系統事件：${subtype}` };
+    return { subtype, summary: tt("tech.systemEvent", { subtype }) };
   }
 
   if (rawType === "file-history-snapshot") {
-    return { subtype: rawType, summary: "檔案快照已更新" };
+    return { subtype: rawType, summary: tt("tech.fileSnapshot") };
   }
 
   if (rawType === "queue-operation") {
     const operation = raw.operation || "unknown";
-    return { subtype: rawType, summary: `佇列操作：${operation}` };
+    return { subtype: rawType, summary: tt("tech.queueOperation", { operation }) };
   }
 
   return {
     subtype: rawType,
-    summary: `技術事件：${rawType}`,
+    summary: tt("tech.generic", { type: rawType }),
   };
 }
 
 function normalizeEvents(events) {
+
   const normalized = [];
 
   for (const event of events) {
@@ -1070,13 +1082,13 @@ function normalizeEvents(events) {
         kind: roleType === "user" ? "chat_user" : "chat_assistant",
         line: event.line,
         timestamp: event.timestamp,
-        title: roleType === "user" ? "使用者" : "Claude",
+        title: roleType === "user" ? tt("chat.user") : tt("chat.assistant"),
         summary: text.summary,
         conversationSummary: extractChatOnlySummary(event.raw),
         conversationToolSummary: (() => {
           const names = extractToolTagNames(text.tags);
           if (names.length === 0) return "";
-          return `工具調用：${names.join(", ")}`;
+          return tt("summary.toolTags", { names: names.join(", ") });
         })(),
         tags:
           rawType === "tool_result" && !text.tags.includes("tool_result")
@@ -1246,12 +1258,12 @@ function renderChatItem(item) {
   article.append(header, body);
 
   if (isLong) {
-    const toggle = createElement("button", "expand-btn", "展開完整內容");
+    const toggle = createElement("button", "expand-btn", tt("action.expandContent"));
     toggle.type = "button";
     toggle.addEventListener("click", () => {
       expanded = !expanded;
       body.textContent = expanded ? fullText : truncateText(fullText, CHAT_PREVIEW_LENGTH);
-      toggle.textContent = expanded ? "收合內容" : "展開完整內容";
+      toggle.textContent = expanded ? tt("action.collapseContent") : tt("action.expandContent");
     });
     article.append(toggle);
   }
@@ -1272,7 +1284,7 @@ function renderChatItem(item) {
   ) {
     const thinkingBox = createElement("details", "assistant-fold");
     thinkingBox.append(
-      createElement("summary", "assistant-fold-summary", `內部思考（${item.thinkingDetails.length}）`),
+      createElement("summary", "assistant-fold-summary", tt("section.thinking", { count: item.thinkingDetails.length })),
     );
     const content = createElement("section", "assistant-thinking");
     for (const text of item.thinkingDetails.slice(0, 2)) {
@@ -1288,7 +1300,7 @@ function renderChatItem(item) {
     item.toolUseDetails.length > 0
   ) {
     const toolBox = createElement("section", "assistant-tools");
-    toolBox.append(createElement("h4", "assistant-subtitle", "工具調用"));
+    toolBox.append(createElement("h4", "assistant-subtitle", tt("section.toolUse")));
     for (const detail of item.toolUseDetails.slice(0, 4)) {
       const card = createElement("div", "assistant-tool-card");
       card.append(createElement("div", "assistant-tool-title", detail.title));
@@ -1311,7 +1323,7 @@ function renderChatItem(item) {
       createElement(
         "summary",
         "assistant-fold-summary",
-        `工具結果（${item.toolResultDetails.length}）`,
+        tt("section.toolResult", { count: item.toolResultDetails.length }),
       ),
     );
     const content = createElement("section", "assistant-tools");
@@ -1362,7 +1374,7 @@ function renderTechGroup(group) {
   const headBtn = createElement(
     "button",
     "tech-group-toggle",
-    `技術事件 ${group.events.length} 筆${subtypeSummary ? `（${subtypeSummary}）` : ""}`,
+    tt("tech.groupTitle", { count: group.events.length, detail: subtypeSummary ? tt("tech.groupDetail", { detail: subtypeSummary }) : "" }),
   );
   headBtn.type = "button";
   headBtn.dataset.expanded = viewState.expanded ? "true" : "false";
@@ -1398,7 +1410,7 @@ function renderTechGroup(group) {
     const more = createElement(
       "button",
       "load-more-btn",
-      `載入更多 (${group.events.length - visible} 筆)`,
+      tt("action.loadMore", { count: group.events.length - visible }),
     );
     more.type = "button";
     more.addEventListener("click", () => {
@@ -1421,9 +1433,9 @@ function renderTimelineView() {
     const warning = createElement(
       "div",
       "warning",
-      `${formatError(state.parseErrorCode)}（行號：${state.parseErrors
-        .map((item) => item.line)
-        .join(", ")}）`,
+      tt("error.parseLines", { message: formatError(state.parseErrorCode), lines: state.parseErrors.map((item) => item.line).join(", ") }),
+
+
     );
     refs.viewerContent.append(warning);
   }
