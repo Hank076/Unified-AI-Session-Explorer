@@ -198,6 +198,7 @@ body {
   border: 1px solid var(--theme-switch-border);
   border-radius: 10px;
   background: var(--theme-switch-bg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .theme-btn {
@@ -219,6 +220,7 @@ body {
 .theme-btn[data-active="true"] {
   background: var(--theme-btn-bg-active);
   border-color: var(--theme-btn-border-active);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .panel-grid {
@@ -391,6 +393,7 @@ body {
 .list-btn[data-active="true"] {
   border-color: var(--control-border-active);
   background: var(--control-bg-active);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .list-btn:focus-visible,
@@ -456,6 +459,10 @@ details summary:focus-visible,
   text-overflow: ellipsis;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
   transition: opacity var(--interactive-transition);
+}
+
+html[data-theme="light"] .path-tooltip {
+  box-shadow: 0 8px 16px rgba(60, 95, 120, 0.22);
 }
 
 .placeholder {
