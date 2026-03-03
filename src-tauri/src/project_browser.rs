@@ -53,11 +53,22 @@ pub struct TimelineEvent {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SessionMetadata {
+    pub model_name: Option<String>,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionTimelinePayload {
-    path: String,
-    error_code: Option<String>,
-    errors: Vec<ParseError>,
-    events: Vec<TimelineEvent>,
+    pub path: String,
+    pub error_code: Option<String>,
+    pub errors: Vec<ParseError>,
+    pub events: Vec<TimelineEvent>,
+    pub metadata: SessionMetadata,
 }
 
 #[tauri::command]
@@ -222,6 +233,10 @@ pub fn read_session_timeline(
     let mut events = Vec::new();
     let mut errors = Vec::new();
 
+    let mut model_name = None;
+    let mut total_input_tokens = 0;
+    let mut total_output_tokens = 0;
+
     for (index, line) in content.lines().enumerate() {
         let line_number = index + 1;
         if line.trim().is_empty() {
@@ -229,7 +244,19 @@ pub fn read_session_timeline(
         }
 
         match serde_json::from_str::<Value>(line) {
-            Ok(value) => events.push(build_timeline_event(line_number, value)),
+            Ok(value) => {
+                // 統計元數據
+                if model_name.is_none() {
+                    model_name = extract_string(&value, &["model", "model_name", "request.model"]);
+                }
+                
+                if let Some(usage) = value.get("usage").or_else(|| value.get("message").and_then(|m| m.get("usage"))) {
+                    total_input_tokens += usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                    total_output_tokens += usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                }
+
+                events.push(build_timeline_event(line_number, value));
+            }
             Err(_) => errors.push(ParseError {
                 line: line_number,
                 message: "invalid json".to_string(),
@@ -238,6 +265,9 @@ pub fn read_session_timeline(
     }
 
     sort_events_by_time(&mut events);
+
+    let start_time = events.first().and_then(|e| e.timestamp.clone());
+    let end_time = events.last().and_then(|e| e.timestamp.clone());
 
     Ok(SessionTimelinePayload {
         path: session_file.to_string_lossy().to_string(),
@@ -248,6 +278,13 @@ pub fn read_session_timeline(
         },
         errors,
         events,
+        metadata: SessionMetadata {
+            model_name,
+            total_input_tokens,
+            total_output_tokens,
+            start_time,
+            end_time,
+        },
     })
 }
 
