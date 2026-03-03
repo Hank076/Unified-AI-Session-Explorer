@@ -29,7 +29,7 @@ test("getLocaleLabel returns readable labels", () => {
 });
 
 test("t resolves translated strings and fallback behavior", () => {
-  assert.equal(t("zh-Hant-TW", "panel.session"), "會話");
+  assert.equal(t("zh-Hant-TW", "panel.session"), "對話");
   assert.equal(t("en-US", "panel.session"), "Sessions");
   assert.equal(t("en-US", "status.projectsLoaded", { count: 3 }), "Loaded 3 projects.");
   assert.equal(t("fr-FR", "panel.session"), "Sessions");

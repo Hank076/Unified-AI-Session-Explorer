@@ -963,7 +963,52 @@ function extractTextSummary(raw, resultsMap = null) {
   }
 
   const summary = textChunks.join("\n").trim();
-  return { summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
+  if (summary) {
+    const commandDisplay = extractCommandDisplay(summary);
+    return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
+  }
+
+  if (contentItems.some((item) => item.type === "tool_result")) {
+    return {
+      summary: tt("summary.toolResult"),
+      tags,
+      thinkingDetails,
+      toolUseDetails,
+      toolResultDetails,
+    };
+  }
+
+  if (toolUseCount > 0) {
+    const names = Array.from(toolNames).slice(0, 3).join(", ");
+    const suffix = names
+      ? tt("summary.toolUseNames", { names, more: toolNames.size > 3 ? "..." : "" })
+      : "";
+    return {
+      summary: tt("summary.toolUseCount", { count: toolUseCount, suffix }),
+      tags,
+      thinkingDetails,
+      toolUseDetails,
+      toolResultDetails,
+    };
+  }
+
+  if (thinkingCount > 0) {
+    return {
+      summary: tt("summary.thinking", { count: thinkingCount }),
+      tags,
+      thinkingDetails,
+      toolUseDetails,
+      toolResultDetails,
+    };
+  }
+
+  return {
+    summary: tt("summary.structuredEvent"),
+    tags,
+    thinkingDetails,
+    toolUseDetails,
+    toolResultDetails,
+  };
 }
 
 function buildTechSummary(event) {
