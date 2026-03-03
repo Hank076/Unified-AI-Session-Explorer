@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "TraceLens",
   "version": "0.1.0",
-  "identifier": "com.unidyna.tauri-app",
+  "identifier": "com.unidyna.tracelens",
   "build": {
     "beforeDevCommand": "npm run dev:web",
     "devUrl": "http://127.0.0.1:1420",
@@ -13,7 +13,8 @@
     "windows": [
       {
         "label": "main",
-        "title": "tauri-app",
+        "title": "TraceLens",
+        "center": true,
         "width": 1320,
         "height": 860,
         "minWidth": 1100,

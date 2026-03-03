@@ -1,10 +1,18 @@
-# Chronicle AI: Claude Projects Browser
+# TraceLens: Claude Projects Browser
 
 A high-performance, privacy-focused desktop application built with **Tauri 2** and **Rust** to visualize and explore your local Claude project history.
 
 ## 🚀 Overview
 
-Claude saves its project sessions, memory files, and subagent logs locally in `.jsonl` format. **Chronicle AI** provides a clean, professional interface to browse these records, complete with a structured timeline, tool-use binding, and session metadata statistics.
+Claude saves its project sessions, memory files, and subagent logs locally in `.jsonl` format. **TraceLens** provides a clean, professional interface to browse these records, complete with a structured timeline, tool-use binding, and session metadata statistics.
+
+## 🔒 Privacy First
+
+Your data is your own. **TraceLens** is designed with a "Local-Only" philosophy:
+- **No Cloud Sync**: We do not upload your logs to any server.
+- **Offline Processing**: All parsing is done locally by the Rust backend.
+- **Direct Access**: The app reads directly from your local filesystem without creating copies in hidden databases.
+- **Transparency**: As an open-source tool, you can verify exactly how your data is handled.
 
 ## ✨ Key Features
 
@@ -35,8 +43,8 @@ Claude saves its project sessions, memory files, and subagent logs locally in `.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/chronicle-ai.git
-   cd chronicle-ai
+   git clone https://github.com/your-username/tracelens.git
+   cd tracelens
    ```
 
 2. Install dependencies:
@@ -55,13 +63,6 @@ Claude saves its project sessions, memory files, and subagent logs locally in `.
 - `src/`: Frontend UI assets (HTML, CSS, Vanilla JS).
 - `docs/`: Design documents and technical specifications.
 - `tests/`: Frontend and i18n test suites.
-
-## 🗺️ Roadmap
-
-- [ ] Global keyword search across all sessions.
-- [ ] Support for Gemini and Codex local history.
-- [ ] Export sessions to Markdown or PDF.
-- [ ] Performance optimization for extremely large (>100MB) log files.
 
 ## 📄 License
 
