@@ -888,7 +888,7 @@ function extractToolTagNames(tags) {
     .filter(Boolean);
 }
 
-function extractTextSummary(raw) {
+function extractTextSummary(raw, resultsMap = null) {
   const message = raw?.message;
   const content = message?.content ?? message;
   const textChunks = [];
@@ -933,6 +933,16 @@ function extractTextSummary(raw) {
       tags.push(`tool:${toolName}`);
       const detail = buildToolUseDetail(item);
       if (detail) toolUseDetails.push(detail);
+
+      // 嘗試關聯結果 (Tool Binding)
+      if (resultsMap && item.id) {
+        const resultItem = resultsMap.get(item.id);
+        if (resultItem) {
+          const resDetail = extractToolResultDetail(resultItem, toolResultDetails.length + 1);
+          if (resDetail) toolResultDetails.push(resDetail);
+          if (!tags.includes("tool_result")) tags.push("tool_result");
+        }
+      }
     }
   }
 
@@ -952,53 +962,8 @@ function extractTextSummary(raw) {
     if (detail) toolResultDetails.push(detail);
   }
 
-    const summary = textChunks.join("\n").trim();
-  if (summary) {
-    const commandDisplay = extractCommandDisplay(summary);
-    return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
-  }
-
-  if (contentItems.some((item) => item.type === "tool_result")) {
-    return {
-      summary: tt("summary.toolResult"),
-      tags,
-      thinkingDetails,
-      toolUseDetails,
-      toolResultDetails,
-    };
-  }
-
-  if (toolUseCount > 0) {
-    const names = Array.from(toolNames).slice(0, 3).join(", ");
-    const suffix = names
-      ? tt("summary.toolUseNames", { names, more: toolNames.size > 3 ? "..." : "" })
-      : "";
-    return {
-      summary: tt("summary.toolUseCount", { count: toolUseCount, suffix }),
-      tags,
-      thinkingDetails,
-      toolUseDetails,
-      toolResultDetails,
-    };
-  }
-
-  if (thinkingCount > 0) {
-    return {
-      summary: tt("summary.thinking", { count: thinkingCount }),
-      tags,
-      thinkingDetails,
-      toolUseDetails,
-      toolResultDetails,
-    };
-  }
-
-  return {
-    summary: tt("summary.structuredEvent"),
-    tags,
-    thinkingDetails,
-    toolUseDetails,
-    toolResultDetails,
-  };
+  const summary = textChunks.join("\n").trim();
+  return { summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
 }
 
 function buildTechSummary(event) {
@@ -1064,13 +1029,43 @@ function buildTechSummary(event) {
 }
 
 function normalizeEvents(events) {
-
   const normalized = [];
+  const toolResultsMap = new Map();
+  const consumedResultIds = new Set();
 
+  // 第一階段：預掃描所有 tool_result
   for (const event of events) {
-    const rawType = event.raw?.type || event.eventType || "unknown";
-    const role = event.raw?.message?.role;
-    const contentItems = normalizeContentItems(event.raw?.message?.content);
+    const raw = event.raw || {};
+    const contentItems = normalizeContentItems(raw.message?.content || raw.content);
+    for (const item of contentItems) {
+      if (item?.type === "tool_result" && item.tool_use_id) {
+        toolResultsMap.set(item.tool_use_id, item);
+      }
+    }
+    // 處理外層就是 tool_result 的情況
+    if (raw.type === "tool_result" && raw.tool_use_id) {
+      toolResultsMap.set(raw.tool_use_id, raw);
+    }
+  }
+
+  // 第二階段：正規化事件
+  for (const event of events) {
+    const raw = event.raw || {};
+    const rawType = raw.type || event.eventType || "unknown";
+    const role = raw.message?.role;
+    const contentItems = normalizeContentItems(raw.message?.content || raw.content);
+    
+    // 檢查此事件是否僅包含已「消費」的工具結果
+    const onlyConsumedResults = contentItems.length > 0 && contentItems.every(item => 
+      item?.type === "tool_result" && item.tool_use_id && toolResultsMap.has(item.tool_use_id)
+    );
+    const isTopLevelConsumed = rawType === "tool_result" && raw.tool_use_id && toolResultsMap.has(raw.tool_use_id);
+
+    // 如果開啟「隱藏系統事件」且這是純工具結果，則略過渲染（因為它已合併到 tool_use 卡片）
+    if (state.hideSystemEvents && (onlyConsumedResults || isTopLevelConsumed)) {
+      continue;
+    }
+
     const hasToolResultContent = contentItems.some((item) => item?.type === "tool_result");
     const roleType =
       rawType === "tool_result" || hasToolResultContent
@@ -1080,14 +1075,14 @@ function normalizeEvents(events) {
           : rawType;
 
     if (roleType === "user" || roleType === "assistant") {
-      const text = extractTextSummary(event.raw);
+      const text = extractTextSummary(raw, toolResultsMap);
       normalized.push({
         kind: roleType === "user" ? "chat_user" : "chat_assistant",
         line: event.line,
         timestamp: event.timestamp,
         title: roleType === "user" ? tt("chat.user") : tt("chat.assistant"),
         summary: text.summary,
-        conversationSummary: extractChatOnlySummary(event.raw),
+        conversationSummary: extractChatOnlySummary(raw),
         conversationToolSummary: (() => {
           const names = extractToolTagNames(text.tags);
           if (names.length === 0) return "";
@@ -1100,7 +1095,7 @@ function normalizeEvents(events) {
         thinkingDetails: text.thinkingDetails,
         toolUseDetails: text.toolUseDetails,
         toolResultDetails: text.toolResultDetails,
-        raw: event.raw,
+        raw: raw,
       });
       continue;
     }
@@ -1113,7 +1108,7 @@ function normalizeEvents(events) {
       title: rawType,
       summary: tech.summary,
       techSubtype: tech.subtype,
-      raw: event.raw,
+      raw: raw,
     });
   }
 
@@ -1469,8 +1464,17 @@ function renderTimelineView() {
 }
 
 function renderTimeline(payload) {
+  const metaParts = [normalizeDisplayPath(payload.path)];
+  if (payload.metadata) {
+    const md = payload.metadata;
+    if (md.modelName) metaParts.push(`Model: ${md.modelName}`);
+    if (md.totalInputTokens || md.totalOutputTokens) {
+      metaParts.push(`Tokens: ${md.totalInputTokens} in / ${md.totalOutputTokens} out`);
+    }
+  }
+
   refs.viewerTitle.textContent = tt("viewer.timeline");
-  refs.viewerMeta.textContent = normalizeDisplayPath(payload.path);
+  refs.viewerMeta.textContent = metaParts.join(" | ");
 
   state.parseErrorCode = payload.errorCode || "";
   state.parseErrors = Array.isArray(payload.errors) ? payload.errors : [];
