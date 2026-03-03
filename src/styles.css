@@ -352,6 +352,9 @@ body {
   padding: 10px 12px;
   cursor: pointer;
   transition: background var(--interactive-transition), border-color var(--interactive-transition);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .entry-btn {

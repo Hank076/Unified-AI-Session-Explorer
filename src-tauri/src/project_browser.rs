@@ -13,6 +13,7 @@ const ERR_PARSE_PARTIAL: &str = "PARSE_PARTIAL";
 pub struct Project {
     name: String,
     path: String,
+    modified_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,13 +86,15 @@ pub fn list_projects(base_path: Option<String>) -> Result<Vec<Project>, String> 
 
         let name = item.file_name().to_string_lossy().to_string();
         let path = item.path();
+        let (modified_ms, _) = get_file_metadata(&path);
         projects.push(Project {
             name,
             path: path.to_string_lossy().to_string(),
+            modified_ms,
         });
     }
 
-    projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    projects.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
     Ok(projects)
 }
 

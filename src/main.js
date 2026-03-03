@@ -264,7 +264,6 @@ function bindPathHover(element, text, options = {}) {
   if (!element || !refs.pathTooltip) return;
   const displayPath = String(text || "");
   const delayMs = Number.isFinite(options.delayMs) ? options.delayMs : 0;
-  element.title = displayPath;
   let timerId = null;
 
   const showNow = (event) => {
@@ -316,8 +315,9 @@ function renderProjects() {
     const button = document.createElement("button");
     button.className = "list-btn";
     if (state.selectedProjectPath === project.path) button.dataset.active = "true";
-    button.textContent = decodeProjectLabel(project.name);
-    button.removeAttribute("title");
+    const label = decodeProjectLabel(project.name);
+    button.textContent = label;
+    bindPathHover(button, label, { delayMs: 1600 });
     button.addEventListener("click", () => selectProject(project.path));
     li.appendChild(button);
     refs.projectsList.appendChild(li);
