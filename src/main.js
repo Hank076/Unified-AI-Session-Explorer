@@ -1505,6 +1505,10 @@ function renderTimelineView() {
 
   if (renderedCount === 0) {
     refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt("placeholder.emptySession"))}</p>`;
+  } else {
+    requestAnimationFrame(() => {
+      refs.viewerContent.scrollTop = refs.viewerContent.scrollHeight;
+    });
   }
 }
 
