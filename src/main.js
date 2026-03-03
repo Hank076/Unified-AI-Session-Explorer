@@ -713,8 +713,11 @@ function buildToolUseDetail(item) {
   if (toolName === "Skill") {
     const skillName = typeof input.skillName === "string" ? input.skillName.trim() : "";
     const name = typeof input.name === "string" ? input.name.trim() : "";
+    const skill = typeof input.skill === "string" ? input.skill.trim() : "";
     const lines = [];
-    if (skillName || name) lines.push(tt("tool.label.skill", { text: skillName || name }));
+    if (skillName || name || skill) {
+      lines.push(tt("tool.label.skill", { text: skillName || name || skill }));
+    }
     return {
       toolName,
       title: tt("tool.skill.title"),
@@ -1586,5 +1589,4 @@ window.addEventListener("DOMContentLoaded", async () => {
   clearViewer();
   await loadProjects();
 });
-
 
