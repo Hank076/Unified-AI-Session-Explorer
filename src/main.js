@@ -29,6 +29,7 @@ const state = {
   parseErrors: [],
   parseErrorCode: "",
   hideSystemEvents: false,
+  timelineSearchQuery: "",
   techViewState: {},
   entryExpandState: {},
   themeMode: "auto",
@@ -47,6 +48,10 @@ const refs = {
   entriesList: null,
   viewerTitle: null,
   viewerMeta: null,
+  viewerMetaPath: null,
+  viewerMetaTime: null,
+  viewerSearchWrap: null,
+  viewerSearchInput: null,
   viewerContent: null,
   status: null,
   hideSystemEventsToggle: null,
@@ -90,9 +95,13 @@ function clearViewer() {
   state.timelineItems = [];
   state.parseErrors = [];
   state.parseErrorCode = "";
+  state.timelineSearchQuery = "";
   state.techViewState = {};
   refs.viewerTitle.textContent = tt("panel.viewer");
-  refs.viewerMeta.textContent = "";
+  renderViewerMeta("", "");
+  setStatus("");
+  setViewerSearchVisible(false);
+  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
   setHideSystemEventsVisible(true);
   refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt("placeholder.select"))}</p>`;
 }
@@ -189,6 +198,12 @@ function updateProjectSearchTexts() {
   if (!refs.projectsSearchInput) return;
   refs.projectsSearchInput.placeholder = tt("project.searchPlaceholder");
   refs.projectsSearchInput.setAttribute("aria-label", tt("project.searchAria"));
+}
+
+function updateViewerSearchTexts() {
+  if (!refs.viewerSearchInput) return;
+  refs.viewerSearchInput.placeholder = tt("viewer.searchPlaceholder");
+  refs.viewerSearchInput.setAttribute("aria-label", tt("viewer.searchAria"));
 }
 
 function getSystemPrefersDark() {
@@ -293,6 +308,7 @@ function setLocale(locale, { persist = true } = {}) {
   if (refs.localeSelect) refs.localeSelect.value = state.locale;
   applyStaticTranslations();
   updateProjectSearchTexts();
+  updateViewerSearchTexts();
   renderProjects();
   renderEntries();
   if (!state.selectedEntryPath) clearViewer();
@@ -365,6 +381,20 @@ function setHideSystemEventsVisible(visible) {
   refs.hideSystemEventsWrap.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
+function updateHideSystemEventsToggle() {
+  if (!refs.hideSystemEventsToggle) return;
+  refs.hideSystemEventsToggle.setAttribute(
+    "aria-pressed",
+    state.hideSystemEvents ? "true" : "false",
+  );
+}
+
+function setViewerSearchVisible(visible) {
+  if (!refs.viewerSearchWrap) return;
+  refs.viewerSearchWrap.style.display = visible ? "flex" : "none";
+  refs.viewerSearchWrap.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
 function renderProjects() {
   refs.projectsList.innerHTML = "";
   const visibleProjects = state.projects.filter((project) =>
@@ -421,6 +451,34 @@ function formatBytes(sizeBytes) {
     unitIndex += 1;
   }
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unitIndex]}`;
+}
+
+function findSelectedProject() {
+  return state.projects.find((project) => project.path === state.selectedProjectPath) || null;
+}
+
+function findSelectedEntry() {
+  return state.entries.find((entry) => entry.path === state.selectedEntryPath) || null;
+}
+
+function buildSessionMetaPath(sessionFileName) {
+  const project = findSelectedProject();
+  const projectName = project ? getProjectDisplayName(project) : tt("panel.projects");
+  return `${projectName} / ${sessionFileName || tt("viewer.timeline")}`;
+}
+
+function formatMetaDay(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function renderViewerMeta(pathText, rightText = "") {
+  if (refs.viewerMetaPath) refs.viewerMetaPath.textContent = String(pathText || "");
+  if (refs.viewerMetaTime) refs.viewerMetaTime.textContent = String(rightText || "");
 }
 
 function renderEntries() {
@@ -605,7 +663,7 @@ function isTopMemoryFile(path, label) {
 function renderMemory(payload) {
   const fileName = String(payload.path || "").split(/[\\/]/).pop() || "memory";
   refs.viewerTitle.textContent = fileName;
-  refs.viewerMeta.textContent = normalizeDisplayPath(payload.path);
+  renderViewerMeta(normalizeDisplayPath(payload.path), "");
   refs.viewerContent.innerHTML = `<pre class="memory-block">${escapeHtml(payload.content)}</pre>`;
 }
 
@@ -1626,8 +1684,13 @@ function renderTimelineView() {
   }
 
   let renderedCount = 0;
+  const query = String(state.timelineSearchQuery || "").trim().toLowerCase();
 
   for (const item of state.timelineItems) {
+    if (query && !doesTimelineItemMatchSearch(item, query)) {
+      continue;
+    }
+
     if (item.kind.startsWith("chat")) {
       if (state.hideSystemEvents && item.kind === "chat_assistant") {
         if (!String(item.conversationSummary || item.conversationToolSummary || "").trim()) {
@@ -1646,7 +1709,11 @@ function renderTimelineView() {
   }
 
   if (renderedCount === 0) {
-    refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt("placeholder.emptySession"))}</p>`;
+    const messageKey =
+      query && state.timelineItems.length > 0
+        ? "placeholder.searchNoResults"
+        : "placeholder.emptySession";
+    refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt(messageKey))}</p>`;
   } else {
     requestAnimationFrame(() => {
       refs.viewerContent.scrollTop = refs.viewerContent.scrollHeight;
@@ -1654,21 +1721,61 @@ function renderTimelineView() {
   }
 }
 
-function renderTimeline(payload) {
-  const metaParts = [normalizeDisplayPath(payload.path)];
-  if (payload.metadata) {
-    const md = payload.metadata;
-    if (md.modelName) metaParts.push(`Model: ${md.modelName}`);
-    if (md.totalInputTokens || md.totalOutputTokens) {
-      metaParts.push(`Tokens: ${md.totalInputTokens} in / ${md.totalOutputTokens} out`);
-    }
+function doesTimelineItemMatchSearch(item, query) {
+  if (!query) return true;
+  if (!item || typeof item !== "object") return false;
+
+  if (String(item.kind || "").startsWith("chat")) {
+    const tags = Array.isArray(item.tags) ? item.tags.join(" ") : "";
+    const haystack = [
+      item.title,
+      item.summary,
+      item.conversationSummary,
+      item.conversationToolSummary,
+      tags,
+      formatTimestamp(item.timestamp),
+    ]
+      .map((part) => String(part || "").toLowerCase())
+      .join("\n");
+    return haystack.includes(query);
   }
 
+  if (item.kind === "tech_group") {
+    return item.events.some((event) => {
+      const haystack = [
+        event.title,
+        event.summary,
+        event.techSubtype,
+        formatTimestamp(event.timestamp),
+      ]
+        .map((part) => String(part || "").toLowerCase())
+        .join("\n");
+      return haystack.includes(query);
+    });
+  }
+
+  return false;
+}
+
+function renderTimeline(payload) {
+  const entry = findSelectedEntry();
+  const rawSessionName = entry?.label
+    ? String(entry.label)
+    : String(payload.path || "").split(/[\\/]/).pop() || "";
+  const metaPath = buildSessionMetaPath(rawSessionName);
+  const eventCount = Array.isArray(payload.events) ? payload.events.length : 0;
+  const metaDate = formatMetaDay(entry?.modifiedMs) || "";
+  const metaRight = metaDate
+    ? tt("viewer.metaSummary", { date: metaDate, count: eventCount })
+    : tt("viewer.metaSummaryNoDate", { count: eventCount });
+
   refs.viewerTitle.textContent = tt("viewer.timeline");
-  refs.viewerMeta.textContent = metaParts.join(" | ");
+  renderViewerMeta(metaPath, metaRight);
 
   state.parseErrorCode = payload.errorCode || "";
   state.parseErrors = Array.isArray(payload.errors) ? payload.errors : [];
+  state.timelineSearchQuery = "";
+  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
   state.techViewState = {};
   state.timelineItems = buildTimelineItems(Array.isArray(payload.events) ? payload.events : []);
 
@@ -1720,6 +1827,18 @@ async function selectEntry(entry) {
   setStatus(tt("status.loadingContent"));
   const hideSystemEventsControl = entry.entryType === "memory_file";
   setHideSystemEventsVisible(!hideSystemEventsControl);
+  setViewerSearchVisible(entry.entryType !== "memory_file");
+  state.timelineSearchQuery = "";
+  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
+  if (entry.entryType === "session") {
+    const metaDate = formatMetaDay(entry.modifiedMs) || "";
+    const metaPath = buildSessionMetaPath(String(entry.label || ""));
+    const metaRight = metaDate
+      ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
+      : tt("viewer.metaSummaryNoDate", { count: "-" });
+    refs.viewerTitle.textContent = tt("viewer.timeline");
+    renderViewerMeta(metaPath, metaRight);
+  }
 
   try {
     if (entry.entryType === "memory_file") {
@@ -1758,6 +1877,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.entriesList = document.querySelector("#entries-list");
   refs.viewerTitle = document.querySelector("#viewer-title");
   refs.viewerMeta = document.querySelector("#viewer-meta");
+  refs.viewerMetaPath = document.querySelector("#viewer-meta-path");
+  refs.viewerMetaTime = document.querySelector("#viewer-meta-time");
+  refs.viewerSearchWrap = document.querySelector("#viewer-search");
+  refs.viewerSearchInput = document.querySelector("#viewer-search-input");
   refs.viewerContent = document.querySelector("#viewer-content");
   refs.status = document.querySelector("#status");
   refs.hideSystemEventsToggle = document.querySelector("#hide-system-events-toggle");
@@ -1778,11 +1901,18 @@ window.addEventListener("DOMContentLoaded", async () => {
       renderProjects();
     });
   }
+  if (refs.viewerSearchInput) {
+    refs.viewerSearchInput.addEventListener("input", (event) => {
+      state.timelineSearchQuery = String(event.target.value || "");
+      renderTimelineView();
+    });
+  }
 
-  refs.hideSystemEventsToggle.checked = true;
   state.hideSystemEvents = true;
-  refs.hideSystemEventsToggle.addEventListener("change", (event) => {
-    state.hideSystemEvents = event.target.checked;
+  updateHideSystemEventsToggle();
+  refs.hideSystemEventsToggle.addEventListener("click", () => {
+    state.hideSystemEvents = !state.hideSystemEvents;
+    updateHideSystemEventsToggle();
     renderTimelineView();
   });
   initLocaleSelector();

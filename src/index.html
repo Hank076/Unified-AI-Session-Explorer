@@ -127,13 +127,42 @@
         <section id="viewer-panel" class="panel viewer panel--viewer" aria-label="Viewer">
           <div class="panel-head viewer-header-row">
             <h2 id="viewer-title" data-i18n="panel.viewer">Viewer</h2>
-            <label class="hide-system-events-toggle" for="hide-system-events-toggle">
-              <input id="hide-system-events-toggle" type="checkbox" />
+            <button id="hide-system-events-toggle" class="hide-system-events-toggle" type="button" aria-pressed="true">
+              <svg class="hide-system-events-icon hide-system-events-icon--on" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+                <circle cx="12" cy="12" r="3.2"></circle>
+              </svg>
+              <svg class="hide-system-events-icon hide-system-events-icon--off" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+                <circle cx="12" cy="12" r="3.2"></circle>
+                <path d="M4 20L20 4"></path>
+              </svg>
               <span data-i18n="toggle.hideSystemEvents">Hide system events</span>
-            </label>
+            </button>
           </div>
-          <div id="viewer-meta" class="meta"></div>
-          <div id="status" class="status" role="status" aria-live="polite"></div>
+          <div id="viewer-meta" class="meta" role="note">
+            <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"></path>
+            </svg>
+            <span id="viewer-meta-path" class="meta-path"></span>
+            <span id="status" class="status" role="status" aria-live="polite"></span>
+            <span class="meta-spacer"></span>
+            <span id="viewer-meta-time" class="meta-time"></span>
+          </div>
+          <div id="viewer-search" class="viewer-search">
+            <svg class="viewer-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="M20 20L16.65 16.65"></path>
+            </svg>
+            <input
+              id="viewer-search-input"
+              type="search"
+              placeholder="搜尋對話..."
+              aria-label="Search messages"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
           <div id="viewer-content" class="viewer-content">
             <p class="placeholder" data-i18n="placeholder.select">Select a project and entry to begin.</p>
           </div>
