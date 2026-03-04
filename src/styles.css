@@ -34,6 +34,9 @@
   --header-border: rgba(46, 46, 56, 0.533);
   --header-height: 64px;
   --theme-btn-active-text: #c4f82a;
+  --project-search-bg: #0e0e16;
+  --project-search-border: #2e2e38;
+  --project-search-icon: #888892;
   --status-error-bg: #4b1f2b;
   --status-error-text: #ffe3ea;
   --status-warn-bg: #4d3a13;
@@ -114,6 +117,9 @@ html[data-theme="light"] {
   --header-border: #e4e4e7;
   --header-height: 56px;
   --theme-btn-active-text: #18181b;
+  --project-search-bg: #fafafa;
+  --project-search-border: #e4e4e7;
+  --project-search-icon: #a1a1aa;
   --status-error-bg: #fce4ea;
   --status-error-text: #7f1d1d;
   --status-warn-bg: #fef3c7;
@@ -384,11 +390,10 @@ body {
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  background: color-mix(in srgb, var(--control-bg), transparent 10%);
+  background: var(--project-search-bg);
   border-radius: 8px;
-  border: var(--control-border-width) solid var(--control-border);
+  border: var(--control-border-width) solid var(--project-search-border);
   width: 100%;
-  margin-bottom: 8px;
 }
 
 .search-box input {
@@ -403,6 +408,36 @@ body {
 
 .search-box input::placeholder {
   color: var(--text-muted);
+}
+
+.search-icon {
+  width: 13px;
+  height: 13px;
+  stroke: var(--project-search-icon);
+  stroke-width: 2;
+  fill: none;
+  flex-shrink: 0;
+}
+
+.projects-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.projects-list {
+  flex: 0;
+  min-height: auto;
+  overflow: visible;
+}
+
+.search-box--projects {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .viewer-header-row {
