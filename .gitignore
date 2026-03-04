@@ -7,15 +7,41 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Runtime data
+pids
+*.pid
+*.pid.lock
+
+# Dependencies / package managers
 node_modules
+.pnpm-store/
+.npm/
+.yarn/
+
+# Build output
 dist
 dist-ssr
+build/
+coverage/
+.nyc_output/
+
+# Env files / secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Tauri / Rust build artifacts
+src-tauri/target/
+src-tauri/gen/
+
 *.local
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
+.history/
 .DS_Store
 *.suo
 *.ntvs*
@@ -25,4 +51,6 @@ dist-ssr
 
 GEMINI.md
 docs/
+.agent/
+.codex/
 
