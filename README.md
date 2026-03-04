@@ -1,14 +1,14 @@
-# TraceLens: Claude Projects Browser
+# Unified AI Session Explorer
 
 A high-performance, privacy-focused desktop application built with **Tauri 2** and **Rust** to visualize and explore your local Claude project history.
 
 ## 🚀 Overview
 
-Claude saves its project sessions, memory files, and subagent logs locally in `.jsonl` format. **TraceLens** provides a clean, professional interface to browse these records, complete with a structured timeline, tool-use binding, and session metadata statistics.
+Claude saves its project sessions, memory files, and subagent logs locally in `.jsonl` format. **Unified AI Session Explorer** provides a clean, professional interface to browse these records, complete with a structured timeline, tool-use binding, and session metadata statistics.
 
 ## 🔒 Privacy First
 
-Your data is your own. **TraceLens** is designed with a "Local-Only" philosophy:
+Your data is your own. **Unified AI Session Explorer** is designed with a "Local-Only" philosophy:
 - **No Cloud Sync**: We do not upload your logs to any server.
 - **Offline Processing**: All parsing is done locally by the Rust backend.
 - **Direct Access**: The app reads directly from your local filesystem without creating copies in hidden databases.
@@ -16,20 +16,21 @@ Your data is your own. **TraceLens** is designed with a "Local-Only" philosophy:
 
 ## ✨ Key Features
 
-- **Project Explorer**: Effortlessly browse all projects located in `~/.claude/projects`.
+- **Project Explorer**: Effortlessly browse all projects located in:
+  - **macOS/Linux**: `~/.claude/projects`
+  - **Windows**: `%USERPROFILE%\.claude\projects`
 - **Session Timeline**: Visualize complex `.jsonl` logs as an intuitive chat interface.
 - **Tool-Use Binding**: Automatically correlates `tool_use` calls with their corresponding `tool_result` into a single, unified card.
 - **Session Metadata**: Instant visibility into Model names, Token usage (Input/Output), and session duration.
 - **Technical Event Grouping**: Consolidates background system events (progress, shell commands, etc.) to keep the conversation focused.
-- **Local & Private**: All parsing and data access stay on your machine. No data is sent to external servers.
-- **Multi-language Support**: Full support for English and Traditional Chinese (zh-Hant-TW).
-- **Theme Support**: Modern Dark mode and high-contrast Light mode.
+- **Multi-language Support**: Managed via `src/i18n.js` (English & Traditional Chinese).
+- **Theme Support**: Dark/Light modes handled via `src/theme.js` and CSS variables.
 
 ## 🛠️ Tech Stack
 
 - **Backend**: Rust (Tauri 2) - High-performance file I/O and JSONL parsing.
-- **Frontend**: Vanilla HTML5, CSS3, and ES6+ JavaScript - Lightweight and framework-free.
-- **Data Source**: Direct access to local `.claude/projects` directory.
+- **Frontend**: Vanilla HTML5, CSS3, and ES6+ JavaScript - Lightweight and **framework-free**.
+- **Data Source**: Direct access to local Claude project directories.
 
 ## 🚦 Getting Started
 
@@ -43,8 +44,8 @@ Your data is your own. **TraceLens** is designed with a "Local-Only" philosophy:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/tracelens.git
-   cd tracelens
+   git clone https://github.com/Hank076/Unified-AI-Session-Explorer.git
+   cd Unified-AI-Session-Explorer
    ```
 
 2. Install dependencies:
@@ -54,14 +55,30 @@ Your data is your own. **TraceLens** is designed with a "Local-Only" philosophy:
 
 3. Start development mode:
    ```bash
+   # Run with Tauri container
    npm run tauri dev
+
+   # Run web version only (requires http-server)
+   npm run dev:web
+   ```
+
+4. Run tests:
+   ```bash
+   # Frontend & i18n tests
+   npm test
+
+   # Backend tests
+   cargo test --manifest-path src-tauri/Cargo.toml
    ```
 
 ## 📂 Project Structure
 
 - `src-tauri/`: Rust backend logic, file system commands, and parsing rules.
-- `src/`: Frontend UI assets (HTML, CSS, Vanilla JS).
-- `docs/`: Design documents and technical specifications.
+- `src/`: Frontend UI assets.
+  - `i18n.js`: Multi-language dictionary and logic.
+  - `theme.js`: Theme switching and persistence.
+  - `main.js`: Main application logic and state management.
+  - `styles.css`: Global styles using CSS variables.
 - `tests/`: Frontend and i18n test suites.
 
 ## 📄 License
