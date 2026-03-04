@@ -9,7 +9,7 @@ const LOCALE_LABELS = {
 
 const MESSAGES = {
   "zh-Hant-TW": {
-    "app.name": "TraceLens",
+    "app.name": "Unified AI Session Explorer",
     "app.subtitle": "瀏覽 AI 的歷史對話與 Memory",
     "panel.projects": "專案",
     "panel.session": "對話",
@@ -129,7 +129,7 @@ const MESSAGES = {
     "tool.result.empty": "工具結果無可讀文字內容",
   },
   "en-US": {
-    "app.name": "TraceLens",
+    "app.name": "Unified AI Session Explorer",
     "app.subtitle": "Browse AI's conversation history and memory",
     "panel.projects": "Projects",
     "panel.session": "Sessions",
