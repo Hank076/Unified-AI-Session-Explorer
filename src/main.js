@@ -1521,9 +1521,229 @@ function extractToolResultDetail(item, index = 1) {
   };
 }
 
+function stringifyCompact(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function joinDefinedParts(parts, separator = " · ") {
+  return parts
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(separator);
+}
+
+function buildToolUseResultDetail(toolUseResult) {
+  if (!toolUseResult || typeof toolUseResult !== "object") return null;
+  const commandNameRaw = String(toolUseResult.commandName || "").trim();
+  const commandName = commandNameRaw || "Unknown";
+  const lines = [];
+  const addLine = (label, value) => {
+    const text = stringifyCompact(value);
+    if (!text) return;
+    lines.push(`${label}: ${truncateText(text, 200)}`);
+  };
+  const addJoinedLine = (label, values) => {
+    if (!Array.isArray(values) || values.length === 0) return;
+    const text = values.map((v) => stringifyCompact(v)).filter(Boolean).join(", ");
+    if (!text) return;
+    lines.push(`${label}: ${truncateText(text, 220)}`);
+  };
+
+  if (/^superpowers:|^skills?:/i.test(commandName)) {
+    addLine("success", toolUseResult.success);
+    return {
+      toolName: "Skill",
+      title: `Skill · ${commandName}`,
+      lines: lines.length > 0 ? lines : [tt("tool.result.empty")],
+    };
+  }
+
+  switch (commandName) {
+    case "Bash":
+      addLine("stdout", toolUseResult.stdout);
+      addLine("stderr", toolUseResult.stderr);
+      addLine("interrupted", toolUseResult.interrupted);
+      addLine("isImage", toolUseResult.isImage);
+      addLine("noOutputExpected", toolUseResult.noOutputExpected);
+      break;
+    case "Read":
+      addLine("type", toolUseResult.type);
+      addLine("filePath", toolUseResult.file?.filePath);
+      addLine("startLine", toolUseResult.file?.startLine);
+      addLine("numLines", toolUseResult.file?.numLines);
+      addLine("totalLines", toolUseResult.file?.totalLines);
+      addLine("content", toolUseResult.file?.content);
+      break;
+    case "Glob":
+      addJoinedLine("filenames", toolUseResult.filenames);
+      addLine("numFiles", toolUseResult.numFiles);
+      addLine("durationMs", toolUseResult.durationMs);
+      addLine("truncated", toolUseResult.truncated);
+      break;
+    case "Grep":
+      addLine("numMatches", toolUseResult.numMatches);
+      addLine("durationMs", toolUseResult.durationMs);
+      addLine("truncated", toolUseResult.truncated);
+      if (Array.isArray(toolUseResult.matches)) {
+        for (const match of toolUseResult.matches.slice(0, 3)) {
+          const line = joinDefinedParts(
+            [match?.filePath, match?.line ? `L${match.line}` : "", match?.preview],
+            " | ",
+          );
+          if (line) lines.push(truncateText(line, 220));
+        }
+      }
+      break;
+    case "Edit":
+    case "Write":
+      addLine("success", toolUseResult.success);
+      addLine("filePath", toolUseResult.filePath);
+      addLine("replacements", toolUseResult.replacements);
+      addLine("bytesWritten", toolUseResult.bytesWritten);
+      break;
+    case "TaskCreate":
+      addLine("task.id", toolUseResult.task?.id);
+      addLine("task.subject", toolUseResult.task?.subject);
+      break;
+    case "TaskUpdate":
+      addLine("success", toolUseResult.success);
+      addLine("taskId", toolUseResult.taskId);
+      addJoinedLine("updatedFields", toolUseResult.updatedFields);
+      addLine(
+        "statusChange",
+        joinDefinedParts(
+          [toolUseResult.statusChange?.from, toolUseResult.statusChange?.to],
+          " -> ",
+        ),
+      );
+      break;
+    case "TaskList":
+      addLine("count", toolUseResult.count);
+      if (Array.isArray(toolUseResult.tasks)) {
+        for (const task of toolUseResult.tasks.slice(0, 3)) {
+          const line = joinDefinedParts(
+            [
+              task?.id ? `#${task.id}` : "",
+              task?.status ? `[${task.status}]` : "",
+              task?.subject,
+            ],
+            " ",
+          );
+          if (line) lines.push(truncateText(line, 220));
+        }
+      }
+      break;
+    case "TaskGet":
+      addLine("task.id", toolUseResult.task?.id);
+      addLine("task.status", toolUseResult.task?.status);
+      addLine("task.subject", toolUseResult.task?.subject);
+      break;
+    case "TaskOutput":
+      addLine("taskId", toolUseResult.taskId);
+      addLine("shellId", toolUseResult.shellId);
+      addLine("stdout", toolUseResult.stdout);
+      addLine("stderr", toolUseResult.stderr);
+      break;
+    case "AskUserQuestion":
+      if (Array.isArray(toolUseResult.questions)) {
+        for (const q of toolUseResult.questions.slice(0, 3)) {
+          addLine("question", q?.question);
+          if (Array.isArray(q?.options)) {
+            addJoinedLine(
+              "options",
+              q.options.map((opt) => opt?.label || opt),
+            );
+          }
+        }
+      }
+      addLine("answers", toolUseResult.answers);
+      addLine("annotations", toolUseResult.annotations);
+      break;
+    case "Agent":
+      addLine("taskId", toolUseResult.taskId);
+      addLine("status", toolUseResult.status);
+      addLine("summary", toolUseResult.summary);
+      addLine("durationMs", toolUseResult.durationMs);
+      addLine("usage", toolUseResult.usage);
+      break;
+    case "WebSearch":
+    case "WebFetch":
+    case "MCPSearch":
+      if (Array.isArray(toolUseResult.results)) {
+        addLine("count", toolUseResult.count ?? toolUseResult.results.length);
+        for (const result of toolUseResult.results.slice(0, 3)) {
+          const line = joinDefinedParts(
+            [result?.title, result?.url, result?.snippet, result?.status],
+            " | ",
+          );
+          if (line) lines.push(truncateText(line, 220));
+        }
+      } else {
+        addLine("results", toolUseResult.results);
+      }
+      break;
+    case "LSP":
+      addLine("method", toolUseResult.method);
+      addLine("result", toolUseResult.result);
+      break;
+    case "NotebookEdit":
+      addLine("success", toolUseResult.success);
+      addLine("notebookPath", toolUseResult.notebookPath);
+      addJoinedLine("updatedCells", toolUseResult.updatedCells);
+      break;
+    case "KillShell":
+      addLine("success", toolUseResult.success);
+      addLine("shellId", toolUseResult.shellId);
+      break;
+    case "ExitPlanMode":
+      addLine("success", toolUseResult.success);
+      addLine("reason", toolUseResult.reason);
+      break;
+    default:
+      addLine("success", toolUseResult.success);
+      addLine("commandName", commandNameRaw);
+      for (const [key, value] of Object.entries(toolUseResult)) {
+        if (key === "success" || key === "commandName") continue;
+        addLine(key, value);
+      }
+      break;
+  }
+
+  return {
+    toolName: commandName,
+    title: `toolUseResult · ${commandName}`,
+    lines: lines.length > 0 ? lines : [tt("tool.result.empty")],
+  };
+}
+
+function pushUniqueDetail(details, detail) {
+  if (!detail || typeof detail !== "object") return;
+  const signature = `${detail.title}::${Array.isArray(detail.lines) ? detail.lines.join("\n") : ""}`;
+  const existing = details.some((item) => {
+    const target = `${item.title}::${Array.isArray(item.lines) ? item.lines.join("\n") : ""}`;
+    return target === signature;
+  });
+  if (!existing) details.push(detail);
+}
+
 
 function extractChatOnlySummary(raw) {
   if (raw?.type === "tool_result") return "";
+
+  const toolUseResultDetail = buildToolUseResultDetail(raw?.toolUseResult);
+  if (toolUseResultDetail) {
+    return joinDefinedParts(
+      [toolUseResultDetail.title, ...(Array.isArray(toolUseResultDetail.lines) ? toolUseResultDetail.lines.slice(0, 2) : [])],
+      " | ",
+    );
+  }
 
   const message = raw?.message;
   const content = message?.content ?? message;
@@ -1563,9 +1783,19 @@ function extractTextSummary(raw, resultsMap = null) {
   const thinkingDetails = [];
   const toolUseDetails = [];
   const toolResultDetails = [];
+  const toolUseResultDetail = buildToolUseResultDetail(raw?.toolUseResult);
 
   if (typeof content === "string" && content.trim()) {
     textChunks.push(content.trim());
+  }
+
+  if (toolUseResultDetail) {
+    tags.push("tool_result");
+    if (toolUseResultDetail.toolName) tags.push(`tool:${toolUseResultDetail.toolName}`);
+    pushUniqueDetail(toolResultDetails, {
+      title: toolUseResultDetail.title,
+      lines: toolUseResultDetail.lines,
+    });
   }
 
   const contentItems = normalizeContentItems(content);
@@ -1583,7 +1813,7 @@ function extractTextSummary(raw, resultsMap = null) {
     if (item.type === "tool_result") {
       tags.push("tool_result");
       const detail = extractToolResultDetail(item, toolResultDetails.length + 1);
-      if (detail) toolResultDetails.push(detail);
+      if (detail) pushUniqueDetail(toolResultDetails, detail);
     }
 
     if (item.type === "thinking") {
@@ -1603,7 +1833,7 @@ function extractTextSummary(raw, resultsMap = null) {
         const resultItem = resultsMap.get(item.id);
         if (resultItem) {
           const resDetail = extractToolResultDetail(resultItem, toolResultDetails.length + 1);
-          if (resDetail) toolResultDetails.push(resDetail);
+          if (resDetail) pushUniqueDetail(toolResultDetails, resDetail);
           if (!tags.includes("tool_result")) tags.push("tool_result");
         }
       }
@@ -1623,13 +1853,23 @@ function extractTextSummary(raw, resultsMap = null) {
   if (textChunks.length === 0 && raw?.type === "tool_result") {
     tags.push("tool_result");
     const detail = extractToolResultDetail({ type: "tool_result", content: raw?.content }, 1);
-    if (detail) toolResultDetails.push(detail);
+    if (detail) pushUniqueDetail(toolResultDetails, detail);
   }
 
   const summary = textChunks.join("\n").trim();
   if (summary) {
     const commandDisplay = extractCommandDisplay(summary);
     return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
+  }
+
+  if (toolUseResultDetail) {
+    return {
+      summary: joinDefinedParts([toolUseResultDetail.title, ...toolUseResultDetail.lines.slice(0, 1)], " | "),
+      tags,
+      thinkingDetails,
+      toolUseDetails,
+      toolResultDetails,
+    };
   }
 
   if (contentItems.some((item) => item.type === "tool_result")) {
@@ -2034,7 +2274,6 @@ function renderChatItem(item) {
 
   if (
     !state.hideSystemEvents &&
-    item.kind === "chat_assistant" &&
     Array.isArray(item.toolResultDetails) &&
     item.toolResultDetails.length > 0
   ) {
@@ -2342,6 +2581,7 @@ async function selectEntry(entry) {
 
     const payload = await invoke("read_session_timeline", {
       sessionPath: entry.path,
+      strictMode: true,
     });
     setHideSystemEventsVisible(true);
     renderTimeline(payload);

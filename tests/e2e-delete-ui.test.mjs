@@ -101,6 +101,30 @@ function createMockInvoke() {
               },
             },
           },
+          {
+            line: 3,
+            timestamp: "2026-03-04T10:02:20Z",
+            role: "user",
+            eventType: "tool_result",
+            summary: "tool result",
+            raw: {
+              type: "user",
+              timestamp: "2026-03-04T10:02:20Z",
+              message: {
+                role: "user",
+                content: [{ type: "tool_result", content: "done" }],
+              },
+              toolUseResult: {
+                commandName: "Bash",
+                success: true,
+                stdout: "done",
+                stderr: "",
+                interrupted: false,
+                isImage: false,
+                noOutputExpected: false,
+              },
+            },
+          },
         ],
         metadata: {
           modelName: "claude-sonnet-4-5",
@@ -148,6 +172,7 @@ async function setupApp() {
       removeEventListener: () => {},
     }));
   window.requestAnimationFrame = (callback) => setTimeout(callback, 0);
+  globalThis.requestAnimationFrame = window.requestAnimationFrame;
 
   if (window.HTMLDialogElement) {
     if (!window.HTMLDialogElement.prototype.showModal) {
@@ -281,6 +306,33 @@ test("chat header does not show tool:* badges", async () => {
     .map((node) => (node.textContent || "").trim())
     .filter(Boolean);
   assert.equal(badgeTexts.some((text) => /^tool:/i.test(text)), false);
+
+  app.cleanup();
+});
+
+test("toolUseResult commandName is parsed and rendered in tool result panel", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const sessionButton = window.document.querySelector('.entry-btn[data-entry-type="session"]');
+  assert.ok(sessionButton);
+  sessionButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const toggle = window.document.querySelector("#hide-system-events-toggle");
+  assert.ok(toggle);
+  toggle.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const toolResultLines = [...window.document.querySelectorAll(".assistant-tool-line")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(toolResultLines.some((text) => /stdout:\s*done/i.test(text)), true);
 
   app.cleanup();
 });
