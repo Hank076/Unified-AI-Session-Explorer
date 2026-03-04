@@ -58,7 +58,58 @@ function createMockInvoke() {
       };
     }
     if (cmd === "read_session_timeline") {
-      return { path: args.sessionPath, errorCode: null, errors: [], events: [] };
+      return {
+        path: args.sessionPath,
+        errorCode: null,
+        errors: [],
+        events: [
+          {
+            line: 1,
+            timestamp: "2026-03-04T10:00:00Z",
+            role: "user",
+            eventType: "message",
+            summary: "hello",
+            raw: {
+              type: "user",
+              timestamp: "2026-03-04T10:00:00Z",
+              message: {
+                role: "user",
+                content: [{ type: "text", text: "hello" }],
+              },
+            },
+          },
+          {
+            line: 2,
+            timestamp: "2026-03-04T10:02:05Z",
+            role: "assistant",
+            eventType: "message",
+            summary: "world",
+            raw: {
+              type: "assistant",
+              timestamp: "2026-03-04T10:02:05Z",
+              message: {
+                role: "assistant",
+                model: "claude-sonnet-4-6",
+                content: [
+                  { type: "text", text: "world" },
+                  { type: "tool_use", id: "toolu_123", name: "Bash", input: { command: "echo hi" } },
+                ],
+                usage: {
+                  input_tokens: 1,
+                  output_tokens: 403,
+                },
+              },
+            },
+          },
+        ],
+        metadata: {
+          modelName: "claude-sonnet-4-5",
+          totalInputTokens: 1234,
+          totalOutputTokens: 567,
+          startTime: "2026-03-04T10:00:00Z",
+          endTime: "2026-03-04T10:02:05Z",
+        },
+      };
     }
     if (cmd === "read_memory") {
       return { path: args.memoryPath, content: "mock-memory" };
@@ -182,6 +233,54 @@ test("session delete requires confirmation modal and supports undo", async () =>
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(mock.calls.some((call) => call.cmd === "delete_session"), false);
   assert.equal(mock.calls.some((call) => call.cmd === "list_project_entries"), true);
+
+  app.cleanup();
+});
+
+test("chat title shows model before line number", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const sessionButton = window.document.querySelector('.entry-btn[data-entry-type="session"]');
+  assert.ok(sessionButton);
+  sessionButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const assistantHeader = window.document.querySelector(".assist-row .msg-header");
+  assert.ok(assistantHeader);
+  const headerText = assistantHeader.textContent || "";
+  const modelIndex = headerText.indexOf("model:claude-sonnet-4-6");
+  const lineIndex = headerText.indexOf("line 2");
+  assert.ok(modelIndex >= 0);
+  assert.ok(lineIndex >= 0);
+  assert.ok(modelIndex < lineIndex);
+
+  app.cleanup();
+});
+
+test("chat header does not show tool:* badges", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const sessionButton = window.document.querySelector('.entry-btn[data-entry-type="session"]');
+  assert.ok(sessionButton);
+  sessionButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const badgeTexts = [...window.document.querySelectorAll(".msg-header .tag-badge")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(badgeTexts.some((text) => /^tool:/i.test(text)), false);
 
   app.cleanup();
 });

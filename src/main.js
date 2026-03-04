@@ -910,6 +910,13 @@ function formatMetaDay(value) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function extractHeaderModelLabel(raw) {
+  const message = raw?.message && typeof raw.message === "object" ? raw.message : null;
+  const modelCandidate = message?.model ?? raw?.model ?? message?.model_name ?? raw?.model_name;
+  const model = String(modelCandidate || "").trim();
+  return model ? `model:${model}` : "";
+}
+
 function renderViewerMeta(pathText, rightText = "") {
   if (refs.viewerMetaPath) refs.viewerMetaPath.textContent = String(pathText || "");
   if (refs.viewerMetaTime) refs.viewerMetaTime.textContent = String(rightText || "");
@@ -1783,6 +1790,7 @@ function normalizeEvents(events) {
         line: event.line,
         timestamp: event.timestamp,
         title: roleType === "user" ? tt("chat.user") : tt("chat.assistant"),
+        headerModel: extractHeaderModelLabel(raw),
         summary: text.summary,
         conversationSummary: extractChatOnlySummary(raw),
         conversationToolSummary: (() => {
@@ -1928,9 +1936,11 @@ function renderChatItem(item) {
   const article = createElement("article", rowClass);
   const bubble = createElement("section", msgClass);
   const header = createElement("header", "msg-header");
-  const visibleTags = state.hideSystemEvents
-    ? item.tags.filter((tag) => tag !== "thinking" && tag !== "tool_result")
-    : item.tags;
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const visibleTags = (state.hideSystemEvents
+    ? tags.filter((tag) => tag !== "thinking" && tag !== "tool_result")
+    : tags
+  ).filter((tag) => !(typeof tag === "string" && tag.startsWith("tool:")));
   const roleClass = item.kind === "chat_user" ? "user-role" : "assist-role";
   const timeClass = item.kind === "chat_user" ? "user-time" : "assist-time";
   const tagClass = item.kind === "chat_user" ? "user-tag" : "assist-tag";
@@ -1940,6 +1950,9 @@ function renderChatItem(item) {
     for (const tag of visibleTags.slice(0, 2)) {
       header.append(createElement("span", `tag-badge ${tagClass}`, tag));
     }
+  }
+  if (item.headerModel) {
+    header.append(createElement("span", `tag-badge ${tagClass}`, item.headerModel));
   }
   header.append(createElement("span", "line", `line ${item.line}`));
 
