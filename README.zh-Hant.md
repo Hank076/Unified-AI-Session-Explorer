@@ -1,5 +1,7 @@
 # Unified AI Session Explorer：Claude 專案歷史瀏覽器
 
+語言： [English](./README.md) | [繁體中文](./README.zh-Hant.md)
+
 這是一個基於 **Tauri 2** 與 **Rust** 開發的高性能、隱私優先桌面應用程式，專為視覺化與探索本機 Claude 專案歷史而設計。
 
 ## 🚀 概覽

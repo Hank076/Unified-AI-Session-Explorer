@@ -1,5 +1,7 @@
 # Unified AI Session Explorer
 
+Languages: [English](./README.md) | [繁體中文](./README.zh-Hant.md)
+
 A high-performance, privacy-focused desktop application built with **Tauri 2** and **Rust** to visualize and explore your local Claude project history.
 
 ## 🚀 Overview
