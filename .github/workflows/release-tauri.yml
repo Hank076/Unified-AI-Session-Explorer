@@ -62,7 +62,7 @@ jobs:
           echo "GITHUB_REF=$GITHUB_REF"
 
       - name: Build and publish release artifacts
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
