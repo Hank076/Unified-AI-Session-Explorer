@@ -444,9 +444,15 @@ function renderEntries() {
     subagentsByParent.get(entry.parentSession).push(entry);
   }
 
+  if (memoryEntries.length > 0) {
+    refs.entriesList.appendChild(
+      createEntriesSectionTitle(tt("panel.memoryFiles"), memoryEntries.length, "memory"),
+    );
+  }
+
   for (const entry of memoryEntries) {
     const li = document.createElement("li");
-    li.appendChild(createEntryButton(entry, { primaryText: entry.label, typeLabel: "memory" }));
+    li.appendChild(createEntryButton(entry, { primaryText: entry.label }));
     refs.entriesList.appendChild(li);
   }
 
@@ -455,6 +461,12 @@ function renderEntries() {
     divider.className = "entries-divider";
     divider.setAttribute("aria-hidden", "true");
     refs.entriesList.appendChild(divider);
+  }
+
+  if (sessionEntries.length > 0) {
+    refs.entriesList.appendChild(
+      createEntriesSectionTitle(`${tt("panel.session")} FILES`, sessionEntries.length, "sessions"),
+    );
   }
 
   for (const entry of sessionEntries) {
@@ -467,7 +479,7 @@ function renderEntries() {
     const row = createElement("div", "entry-row");
     if (hasChildren) row.dataset.hasChildren = "true";
 
-    row.appendChild(createEntryButton(entry, { typeLabel: "session", hasChildren }));
+    row.appendChild(createEntryButton(entry, { hasChildren }));
     if (hasChildren) {
       const toggle = createElement("button", "entry-toggle", expanded ? "▾" : "▸");
       toggle.type = "button";
@@ -487,16 +499,73 @@ function renderEntries() {
     if (!expanded) continue;
     for (const child of children) {
       const childLi = document.createElement("li");
+      childLi.className = "entry-child-item";
       childLi.appendChild(
         createEntryButton(child, {
           primaryText: tt("entry.childPrefix", { time: formatEntryTime(child.modifiedMs) }),
-          typeLabel: "subagent",
           isSubagent: true,
         }),
       );
       refs.entriesList.appendChild(childLi);
     }
   }
+}
+
+function createEntriesSectionTitle(title, count, iconName = "") {
+  const item = document.createElement("li");
+  item.className = "entries-section-title";
+  if (iconName) item.classList.add(`entries-section-title--${iconName}`);
+  item.setAttribute("aria-hidden", "true");
+
+  const headingWrap = createElement("span", "entries-section-heading-wrap");
+  const icon = createSectionIcon(iconName);
+  if (icon) headingWrap.appendChild(icon);
+  headingWrap.append(createElement("span", "entries-section-heading", title));
+  const badge = createElement("span", "entries-section-badge", String(count));
+  item.append(headingWrap, badge);
+  return item;
+}
+
+function createSectionIcon(name) {
+  const iconName = String(name || "").toLowerCase();
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.classList.add("entries-section-icon");
+  if (iconName) svg.classList.add(`entries-section-icon--${iconName}`);
+
+  const addPath = (d) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.8");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(path);
+  };
+
+  if (iconName === "memory") {
+    addPath("M8.5 8.5a3.5 3.5 0 0 1 7 0");
+    addPath("M8 8H6.8A2.8 2.8 0 0 0 4 10.8v2.6A2.6 2.6 0 0 0 6.6 16H8");
+    addPath("M16 8h1.4a2.6 2.6 0 0 1 2.6 2.6v2.8a2.6 2.6 0 0 1-2.6 2.6H16");
+    addPath("M12 6.3v2.1");
+    addPath("M8 11h2");
+    addPath("M14 11h2");
+    addPath("M12 15.2v2.5");
+    addPath("M10.5 18h3");
+    return svg;
+  }
+
+  if (iconName === "sessions") {
+    addPath("M12.8 3.1a1.4 1.4 0 0 0-1.6 0L3 8l8.2 4.9a1.4 1.4 0 0 0 1.6 0L21 8z");
+    addPath("m3.2 11.2 8 4.8a1.4 1.4 0 0 0 1.6 0l8-4.8");
+    addPath("m3.2 14.8 8 4.8a1.4 1.4 0 0 0 1.6 0l8-4.8");
+    return svg;
+  }
+
+  return null;
 }
 
 function createEntryButton(
