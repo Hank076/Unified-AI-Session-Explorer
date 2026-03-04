@@ -2480,17 +2480,40 @@ function doesTimelineItemMatchSearch(item, query) {
   return false;
 }
 
+function calculateSessionDurationMinutes(events) {
+  if (!Array.isArray(events) || events.length === 0) return null;
+  let totalDurationMs = 0;
+
+  for (const event of events) {
+    const raw = event?.raw;
+    if (!raw || typeof raw !== "object") continue;
+    if (raw.type !== "system" || raw.subtype !== "turn_duration") continue;
+    const durationMs = Number(raw.durationMs);
+    if (!Number.isFinite(durationMs) || durationMs < 0) continue;
+    totalDurationMs += durationMs;
+  }
+
+  if (totalDurationMs <= 0) return null;
+  return Math.ceil(totalDurationMs / 60000);
+}
+
 function renderTimeline(payload) {
   const entry = findSelectedEntry();
   const rawSessionName = entry?.label
     ? String(entry.label)
     : String(payload.path || "").split(/[\\/]/).pop() || "";
   const metaPath = buildSessionMetaPath(rawSessionName);
-  const eventCount = Array.isArray(payload.events) ? payload.events.length : 0;
+  const events = Array.isArray(payload.events) ? payload.events : [];
+  const eventCount = events.length;
+  const totalMinutes = calculateSessionDurationMinutes(events);
   const metaDate = formatMetaDay(entry?.modifiedMs) || "";
-  const metaRight = metaDate
-    ? tt("viewer.metaSummary", { date: metaDate, count: eventCount })
-    : tt("viewer.metaSummaryNoDate", { count: eventCount });
+  const metaRight = totalMinutes
+    ? metaDate
+      ? tt("viewer.metaSummaryWithDuration", { date: metaDate, count: eventCount, minutes: totalMinutes })
+      : tt("viewer.metaSummaryNoDateWithDuration", { count: eventCount, minutes: totalMinutes })
+    : metaDate
+      ? tt("viewer.metaSummary", { date: metaDate, count: eventCount })
+      : tt("viewer.metaSummaryNoDate", { count: eventCount });
 
   refs.viewerTitle.textContent = tt("viewer.timeline");
   renderViewerMeta(metaPath, metaRight);
@@ -2500,7 +2523,7 @@ function renderTimeline(payload) {
   state.timelineSearchQuery = "";
   if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
   state.techViewState = {};
-  state.timelineItems = buildTimelineItems(Array.isArray(payload.events) ? payload.events : []);
+  state.timelineItems = buildTimelineItems(events);
 
   renderTimelineView();
 }

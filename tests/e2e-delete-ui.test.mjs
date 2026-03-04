@@ -125,6 +125,32 @@ function createMockInvoke() {
               },
             },
           },
+          {
+            line: 4,
+            timestamp: "2026-03-04T10:03:00Z",
+            role: null,
+            eventType: "system",
+            summary: "turn duration",
+            raw: {
+              type: "system",
+              subtype: "turn_duration",
+              durationMs: 60000,
+              timestamp: "2026-03-04T10:03:00Z",
+            },
+          },
+          {
+            line: 5,
+            timestamp: "2026-03-04T10:04:00Z",
+            role: null,
+            eventType: "system",
+            summary: "turn duration",
+            raw: {
+              type: "system",
+              subtype: "turn_duration",
+              durationMs: 120000,
+              timestamp: "2026-03-04T10:04:00Z",
+            },
+          },
         ],
         metadata: {
           modelName: "claude-sonnet-4-5",
@@ -333,6 +359,26 @@ test("toolUseResult commandName is parsed and rendered in tool result panel", as
     .map((node) => (node.textContent || "").trim())
     .filter(Boolean);
   assert.equal(toolResultLines.some((text) => /stdout:\s*done/i.test(text)), true);
+
+  app.cleanup();
+});
+
+test("viewer meta shows total minutes from system turn_duration events", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const sessionButton = window.document.querySelector('.entry-btn[data-entry-type="session"]');
+  assert.ok(sessionButton);
+  sessionButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const metaText = (window.document.querySelector("#viewer-meta-time")?.textContent || "").trim();
+  assert.equal(/3\s*(?:分鐘|min)/i.test(metaText), true);
 
   app.cleanup();
 });
