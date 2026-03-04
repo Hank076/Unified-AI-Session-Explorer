@@ -1,7 +1,7 @@
 [package]
-name = "tracelens-app"
+name = "unified-ai-session-explorer"
 version = "0.1.0"
-description = "TraceLens: Claude Projects Browser"
+description = "Unified AI Session Explorer"
 authors = ["you"]
 edition = "2021"
 
@@ -22,4 +22,3 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
