@@ -428,16 +428,14 @@ body {
 .projects-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.projects-list {
-  flex: 0;
-  min-height: auto;
-  overflow: visible;
+.projects-scroll > .search-box--projects {
+  margin-right: 0;
 }
 
 .search-box--projects {
@@ -476,6 +474,20 @@ body {
   gap: 6px;
   flex: 1;
   min-height: 0;
+}
+
+.list.projects-list {
+  margin-right: -8px;
+  padding-right: 8px;
+}
+
+.panel--entries .list > li {
+  margin-right: 0;
+}
+
+.panel--entries .list {
+  margin-right: -8px;
+  padding-right: 8px;
 }
 
 .list-btn {
