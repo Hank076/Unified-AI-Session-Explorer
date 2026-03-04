@@ -713,14 +713,6 @@ body {
   color: var(--accent);
 }
 
-html[data-theme="light"] .entries-section-icon--sessions {
-  color: var(--text-muted);
-}
-
-html[data-theme="light"] .entries-section-title--sessions .entries-section-heading {
-  color: var(--text-muted);
-}
-
 .entries-section-badge {
   border: 1px solid var(--chip-border);
   border-radius: 999px;
