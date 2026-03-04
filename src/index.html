@@ -1,7 +1,13 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en-US">
   <head>
     <meta charset="UTF-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TraceLens</title>
@@ -11,55 +17,65 @@
   <body>
     <main class="app">
       <header class="app-header">
-        <div class="app-header-row">
-          <div>
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">TL</div>
+          <div class="brand-copy">
             <h1 data-i18n="app.name">TraceLens</h1>
             <p data-i18n="app.subtitle">Browse ~/.claude/projects, sessions, and MEMORY.md</p>
           </div>
-          <div class="header-controls">
-            <div class="theme-switch" role="radiogroup" data-i18n-aria-label="theme.mode" aria-label="Theme mode">
-              <button
-                id="theme-auto"
-                class="theme-btn"
-                type="button"
-                data-theme-mode="auto"
-                role="radio"
-                aria-checked="false"
-              >
-                <span data-i18n="theme.auto">Auto</span>
-              </button>
-              <button
-                id="theme-light"
-                class="theme-btn"
-                type="button"
-                data-theme-mode="light"
-                role="radio"
-                aria-checked="false"
-              >
-                <span data-i18n="theme.light">Light</span>
-              </button>
-              <button
-                id="theme-dark"
-                class="theme-btn"
-                type="button"
-                data-theme-mode="dark"
-                role="radio"
-                aria-checked="false"
-              >
-                <span data-i18n="theme.dark">Dark</span>
-              </button>
-            </div>
-            <label class="language-switch" for="locale-select">
-              <span data-i18n="language.label">Language</span>
-              <select id="locale-select" aria-label="Language"></select>
-            </label>
+        </div>
+
+        <div class="header-controls">
+          <div class="theme-switch" role="radiogroup" data-i18n-aria-label="theme.mode" aria-label="Theme mode">
+            <button
+              id="theme-auto"
+              class="theme-btn"
+              type="button"
+              data-theme-mode="auto"
+              role="radio"
+              aria-checked="false"
+            >
+              <span data-i18n="theme.auto">Auto</span>
+            </button>
+            <button
+              id="theme-light"
+              class="theme-btn"
+              type="button"
+              data-theme-mode="light"
+              role="radio"
+              aria-checked="false"
+            >
+              <span data-i18n="theme.light">Light</span>
+            </button>
+            <button
+              id="theme-dark"
+              class="theme-btn"
+              type="button"
+              data-theme-mode="dark"
+              role="radio"
+              aria-checked="false"
+            >
+              <span data-i18n="theme.dark">Dark</span>
+            </button>
           </div>
+          <label class="language-switch" for="locale-select">
+            <span data-i18n="language.label">Language</span>
+            <select id="locale-select" aria-label="Language"></select>
+          </label>
         </div>
       </header>
 
-      <section id="panel-grid" class="panel-grid" data-i18n-aria-label="aria.projectsExplorer" aria-label="Projects Explorer">
-        <aside id="projects-panel" class="panel" data-i18n-aria-label="panel.projects" aria-label="Projects">
-          <h2 data-i18n="panel.projects">Projects</h2>
+      <section
+        id="panel-grid"
+        class="panel-grid"
+        data-i18n-aria-label="aria.projectsExplorer"
+        aria-label="Projects Explorer"
+      >
+        <aside id="projects-panel" class="panel panel--projects" data-i18n-aria-label="panel.projects" aria-label="Projects">
+          <div class="panel-head">
+            <h2 data-i18n="panel.projects">Projects</h2>
+            <span class="panel-kpi">P</span>
+          </div>
           <ul id="projects-list" class="list"></ul>
         </aside>
 
@@ -72,8 +88,11 @@
           aria-label="Resize Projects and Sessions columns"
         ></div>
 
-        <aside id="entries-panel" class="panel" aria-label="Sessions">
-          <h2 data-i18n="panel.session">Sessions</h2>
+        <aside id="entries-panel" class="panel panel--entries" aria-label="Sessions">
+          <div class="panel-head">
+            <h2 data-i18n="panel.session">Sessions</h2>
+            <span class="panel-kpi">S</span>
+          </div>
           <ul id="entries-list" class="list"></ul>
         </aside>
 
@@ -86,8 +105,8 @@
           aria-label="Resize Sessions and Viewer columns"
         ></div>
 
-        <section id="viewer-panel" class="panel viewer" aria-label="Viewer">
-          <div class="viewer-header-row">
+        <section id="viewer-panel" class="panel viewer panel--viewer" aria-label="Viewer">
+          <div class="panel-head viewer-header-row">
             <h2 id="viewer-title" data-i18n="panel.viewer">Viewer</h2>
             <label class="hide-system-events-toggle" for="hide-system-events-toggle">
               <input id="hide-system-events-toggle" type="checkbox" />
