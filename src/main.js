@@ -1473,25 +1473,25 @@ function renderRawDetails(raw) {
 }
 
 function renderChatItem(item) {
-  const article = createElement("article", `event chat ${item.kind}`);
-  const header = createElement("header", "event-header");
+  const rowClass = item.kind === "chat_user" ? "user-row" : "assist-row";
+  const msgClass = item.kind === "chat_user" ? "user-msg" : "assist-msg";
+  const article = createElement("article", rowClass);
+  const bubble = createElement("section", msgClass);
+  const header = createElement("header", "msg-header");
   const visibleTags = state.hideSystemEvents
     ? item.tags.filter((tag) => tag !== "thinking" && tag !== "tool_result")
     : item.tags;
-  const titleGroup = createElement("div", "title-group");
-  titleGroup.append(createElement("span", "badge", item.title));
-  if (item.kind === "chat_assistant" && visibleTags.length > 0) {
-    const inlineTagRow = createElement("div", "inline-tag-row");
-    for (const tag of visibleTags.slice(0, 4)) {
-      inlineTagRow.append(createElement("span", "tag inline-tag", tag));
+  const roleClass = item.kind === "chat_user" ? "user-role" : "assist-role";
+  const timeClass = item.kind === "chat_user" ? "user-time" : "assist-time";
+  const tagClass = item.kind === "chat_user" ? "user-tag" : "assist-tag";
+  header.append(createElement("span", `role-lbl ${roleClass}`, item.title));
+  header.append(createElement("span", `time-lbl ${timeClass}`, formatTimestamp(item.timestamp)));
+  if (visibleTags.length > 0) {
+    for (const tag of visibleTags.slice(0, 2)) {
+      header.append(createElement("span", `tag-badge ${tagClass}`, tag));
     }
-    titleGroup.append(inlineTagRow);
   }
-  header.append(
-    titleGroup,
-    createElement("span", "time", formatTimestamp(item.timestamp)),
-    createElement("span", "line", `line ${item.line}`),
-  );
+  header.append(createElement("span", "line", `line ${item.line}`));
 
   const fullText = String(
     state.hideSystemEvents
@@ -1500,12 +1500,21 @@ function renderChatItem(item) {
   );
   const isLong = fullText.length > CHAT_PREVIEW_LENGTH;
   let expanded = false;
-  const body = createElement(
-    "p",
-    "chat-text",
-    isLong ? truncateText(fullText, CHAT_PREVIEW_LENGTH) : fullText,
-  );
-  article.append(header, body);
+  const textClass = item.kind === "chat_user" ? "msg-text user-msg-text" : "assist-text";
+  const body = createElement("p", textClass, isLong ? truncateText(fullText, CHAT_PREVIEW_LENGTH) : fullText);
+
+  let contentRoot = bubble;
+  if (item.kind === "chat_assistant") {
+    const assistHeader = createElement("div", "assist-hdr");
+    assistHeader.append(header);
+    const assistBody = createElement("div", "assist-body");
+    assistBody.append(body);
+    bubble.append(assistHeader, assistBody);
+    contentRoot = assistBody;
+  } else {
+    bubble.append(header, body);
+  }
+  article.append(bubble);
 
   if (isLong) {
     const toggle = createElement("button", "expand-btn", tt("action.expandContent"));
@@ -1515,7 +1524,7 @@ function renderChatItem(item) {
       body.textContent = expanded ? fullText : truncateText(fullText, CHAT_PREVIEW_LENGTH);
       toggle.textContent = expanded ? tt("action.collapseContent") : tt("action.expandContent");
     });
-    article.append(toggle);
+    contentRoot.append(toggle);
   }
 
   if (item.kind !== "chat_assistant" && visibleTags.length > 0) {
@@ -1523,7 +1532,7 @@ function renderChatItem(item) {
     for (const tag of visibleTags.slice(0, 4)) {
       tagRow.append(createElement("span", "tag", tag));
     }
-    article.append(tagRow);
+    contentRoot.append(tagRow);
   }
 
   if (
@@ -1541,7 +1550,7 @@ function renderChatItem(item) {
       content.append(createElement("p", "assistant-thinking-text", truncateText(text, 800)));
     }
     thinkingBox.append(content);
-    article.append(thinkingBox);
+    contentRoot.append(thinkingBox);
   }
 
   if (
@@ -1549,17 +1558,15 @@ function renderChatItem(item) {
     Array.isArray(item.toolUseDetails) &&
     item.toolUseDetails.length > 0
   ) {
-    const toolBox = createElement("section", "assistant-tools");
-    toolBox.append(createElement("h4", "assistant-subtitle", tt("section.toolUse")));
     for (const detail of item.toolUseDetails.slice(0, 4)) {
-      const card = createElement("div", "assistant-tool-card");
+      const cardClass = "assistant-tool-card assistant-tool-card--direct";
+      const card = createElement("div", cardClass);
       card.append(createElement("div", "assistant-tool-title", detail.title));
       for (const line of detail.lines.slice(0, 5)) {
         card.append(createElement("div", "assistant-tool-line", line));
       }
-      toolBox.append(card);
+      contentRoot.append(card);
     }
-    article.append(toolBox);
   }
 
   if (
@@ -1586,15 +1593,16 @@ function renderChatItem(item) {
       content.append(card);
     }
     resultBox.append(content);
-    article.append(resultBox);
+    contentRoot.append(resultBox);
   }
 
-  article.append(renderRawDetails(item.raw));
+  contentRoot.append(renderRawDetails(item.raw));
   return article;
 }
 
 function renderTechGroup(group) {
-  const wrapper = createElement("section", "event chat chat_assistant tech-group tech-group-chat");
+  const wrapper = createElement("section", "tool-row");
+  const block = createElement("section", "tool-block");
   const viewState = state.techViewState[group.id] || {
     expanded: false,
     visibleCount: TECH_PREVIEW_COUNT,
@@ -1610,21 +1618,23 @@ function renderTechGroup(group) {
     .map(([key, count]) => `${key} ${count}`)
     .join(" / ");
 
-  const header = createElement("header", "event-header");
-  const titleGroup = createElement("div", "title-group");
-  titleGroup.append(createElement("span", "badge", "Claude"));
-  titleGroup.append(createElement("span", "tag inline-tag", "technical"));
+  const header = createElement("header", "tool-block-hdr");
   header.append(
-    titleGroup,
-    createElement("span", "time", "-"),
-    createElement("span", "line", `events ${group.events.length}`),
+    createElement(
+      "span",
+      "tool-hdr-txt",
+      tt("tech.groupTitle", {
+        count: group.events.length,
+        detail: subtypeSummary ? tt("tech.groupDetail", { detail: subtypeSummary }) : "",
+      }),
+    ),
   );
-  wrapper.append(header);
+  block.append(header);
 
   const headBtn = createElement(
     "button",
-    "tech-group-toggle",
-    tt("tech.groupTitle", { count: group.events.length, detail: subtypeSummary ? tt("tech.groupDetail", { detail: subtypeSummary }) : "" }),
+    "tool-raw-btn",
+    viewState.expanded ? tt("action.collapseContent") : tt("action.expandContent"),
   );
   headBtn.type = "button";
   headBtn.dataset.expanded = viewState.expanded ? "true" : "false";
@@ -1635,16 +1645,18 @@ function renderTechGroup(group) {
     };
     renderTimelineView();
   });
-  wrapper.append(headBtn);
+  header.append(headBtn);
 
   if (!viewState.expanded) {
+    wrapper.append(block);
     return wrapper;
   }
 
+  const body = createElement("div", "tool-block-body");
   const list = createElement("ul", "tech-event-list");
   const visible = Math.min(viewState.visibleCount, group.events.length);
   for (const event of group.events.slice(0, visible)) {
-    const row = createElement("li", "tech-event-row");
+    const row = createElement("li", "tool-card tech-event-row");
     const meta = createElement(
       "div",
       "tech-meta",
@@ -1654,7 +1666,7 @@ function renderTechGroup(group) {
     row.append(meta, summary, renderRawDetails(event.raw));
     list.append(row);
   }
-  wrapper.append(list);
+  body.append(list);
 
   if (visible < group.events.length) {
     const more = createElement(
@@ -1670,9 +1682,11 @@ function renderTechGroup(group) {
       };
       renderTimelineView();
     });
-    wrapper.append(more);
+    body.append(more);
   }
 
+  block.append(body);
+  wrapper.append(block);
   return wrapper;
 }
 
