@@ -379,6 +379,32 @@ body {
   display: none;
 }
 
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: color-mix(in srgb, var(--control-bg), transparent 10%);
+  border-radius: 8px;
+  border: var(--control-border-width) solid var(--control-border);
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.search-box input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.search-box input::placeholder {
+  color: var(--text-muted);
+}
+
 .viewer-header-row {
   display: flex;
   align-items: center;
@@ -426,6 +452,43 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.project-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.project-name {
+  width: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--control-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-path {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-btn[data-active="true"] .project-path {
+  color: var(--accent);
+}
+
+.list-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 10px 12px;
 }
 
 .entry-btn {

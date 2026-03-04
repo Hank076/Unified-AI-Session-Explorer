@@ -1,18 +1,34 @@
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::io::{BufRead, BufReader};
+use std::path::{Component, Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
 
 const ERR_NOT_FOUND: &str = "NOT_FOUND";
 const ERR_READ_FAILED: &str = "READ_FAILED";
 const ERR_PARSE_PARTIAL: &str = "PARSE_PARTIAL";
+const NEGATIVE_CWD_CACHE_TTL_MS: u64 = 60_000;
+const CWD_CACHE_FALLBACK_TTL_MS: u64 = 300_000;
+
+static PROJECT_CWD_CACHE: OnceLock<Mutex<HashMap<String, ProjectCwdCacheEntry>>> = OnceLock::new();
+
+#[derive(Debug, Clone)]
+struct ProjectCwdCacheEntry {
+    cwd_path: Option<String>,
+    source_session: Option<PathBuf>,
+    source_session_mtime_ms: Option<u64>,
+    cached_at_ms: u64,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     name: String,
     path: String,
+    cwd_path: Option<String>,
     modified_ms: Option<u64>,
 }
 
@@ -84,12 +100,17 @@ pub fn list_projects(base_path: Option<String>) -> Result<Vec<Project>, String> 
             continue;
         }
 
-        let name = item.file_name().to_string_lossy().to_string();
         let path = item.path();
+        let cwd_path = infer_project_cwd_path_cached(&path);
+        let name = cwd_path
+            .as_deref()
+            .and_then(project_name_from_cwd)
+            .unwrap_or_else(|| item.file_name().to_string_lossy().to_string());
         let (modified_ms, _) = get_file_metadata(&path);
         projects.push(Project {
             name,
             path: path.to_string_lossy().to_string(),
+            cwd_path,
             modified_ms,
         });
     }
@@ -343,6 +364,164 @@ fn extract_string(value: &Value, keys: &[&str]) -> Option<String> {
     None
 }
 
+fn infer_project_cwd_path_cached(project_dir: &Path) -> Option<String> {
+    let key = project_dir.to_string_lossy().to_string();
+    let now_ms = now_unix_ms();
+
+    if let Some(cached) = get_cached_project_cwd(&key) {
+        if let Some(source) = cached.source_session.as_ref() {
+            let current_mtime = get_file_metadata(source).0;
+            if current_mtime == cached.source_session_mtime_ms {
+                return cached.cwd_path;
+            }
+        } else if cached.cwd_path.is_none() {
+            if now_ms.saturating_sub(cached.cached_at_ms) < NEGATIVE_CWD_CACHE_TTL_MS {
+                return None;
+            }
+        } else if now_ms.saturating_sub(cached.cached_at_ms) < CWD_CACHE_FALLBACK_TTL_MS {
+            return cached.cwd_path;
+        }
+    }
+
+    let fresh = infer_project_cwd_with_source(project_dir, now_ms);
+    set_cached_project_cwd(&key, fresh.clone());
+    fresh.cwd_path
+}
+
+fn infer_project_cwd_with_source(project_dir: &Path, cached_at_ms: u64) -> ProjectCwdCacheEntry {
+    let mut session_files: Vec<PathBuf> = match fs::read_dir(project_dir) {
+        Ok(read_dir) => read_dir
+            .filter_map(|item| item.ok().map(|v| v.path()))
+            .filter(|path| path.is_file() && has_jsonl_extension(path))
+            .collect(),
+        Err(_) => {
+            return ProjectCwdCacheEntry {
+                cwd_path: None,
+                source_session: None,
+                source_session_mtime_ms: None,
+                cached_at_ms,
+            };
+        }
+    };
+
+    if session_files.is_empty() {
+        return ProjectCwdCacheEntry {
+            cwd_path: None,
+            source_session: None,
+            source_session_mtime_ms: None,
+            cached_at_ms,
+        };
+    }
+
+    session_files.sort_by(|a, b| {
+        let (a_mod, a_size) = get_file_metadata(a);
+        let (b_mod, b_size) = get_file_metadata(b);
+        a_size.cmp(&b_size).then(a_mod.cmp(&b_mod)).then(a.cmp(b))
+    });
+
+    for session_file in &session_files {
+        let session_mtime = get_file_metadata(session_file).0;
+        if let Some(cwd) = extract_cwd_from_session_file(&session_file, 300) {
+            return ProjectCwdCacheEntry {
+                cwd_path: Some(cwd),
+                source_session: Some(session_file.clone()),
+                source_session_mtime_ms: session_mtime,
+                cached_at_ms,
+            };
+        }
+    }
+
+    ProjectCwdCacheEntry {
+        cwd_path: None,
+        source_session: None,
+        source_session_mtime_ms: None,
+        cached_at_ms,
+    }
+}
+
+fn get_cached_project_cwd(key: &str) -> Option<ProjectCwdCacheEntry> {
+    let cache = PROJECT_CWD_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let guard = cache.lock().ok()?;
+    guard.get(key).cloned()
+}
+
+fn set_cached_project_cwd(key: &str, entry: ProjectCwdCacheEntry) {
+    let cache = PROJECT_CWD_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(key.to_string(), entry);
+    }
+}
+
+fn extract_cwd_from_session_file(path: &Path, max_lines: usize) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let reader = BufReader::new(file);
+    for line_result in reader.lines().take(max_lines) {
+        let line = line_result.ok()?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value = match serde_json::from_str::<Value>(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(cwd) = find_string_by_key_recursive(&value, &["cwd", "current_working_directory"]) {
+            return Some(cwd);
+        }
+    }
+    None
+}
+
+fn find_string_by_key_recursive(value: &Value, keys: &[&str]) -> Option<String> {
+    match value {
+        Value::Object(map) => {
+            for key in keys {
+                if let Some(text) = map.get(*key).and_then(|v| v.as_str()) {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+            for child in map.values() {
+                if let Some(found) = find_string_by_key_recursive(child, keys) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Value::Array(items) => {
+            for item in items {
+                if let Some(found) = find_string_by_key_recursive(item, keys) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn project_name_from_cwd(cwd: &str) -> Option<String> {
+    let mut last = None;
+    for component in Path::new(cwd).components() {
+        if let Component::Normal(value) = component {
+            let text = value.to_string_lossy().trim().to_string();
+            if !text.is_empty() {
+                last = Some(text);
+            }
+        }
+    }
+    last
+}
+
+fn now_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+        .unwrap_or(0)
+}
+
 fn has_jsonl_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
@@ -436,8 +615,14 @@ mod tests {
         fs::write(path, content).expect("write file");
     }
 
+    fn clear_project_cwd_cache() {
+        let cache = PROJECT_CWD_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        cache.lock().expect("lock cache").clear();
+    }
+
     #[test]
     fn list_entries_memory_first_and_include_subagents() {
+        clear_project_cwd_cache();
         let root = unique_temp_dir("entries");
         let project = root.join("demo");
         fs::create_dir_all(&project).expect("create project");
@@ -464,6 +649,7 @@ mod tests {
 
     #[test]
     fn parse_session_keeps_valid_events_and_reports_partial_error() {
+        clear_project_cwd_cache();
         let root = unique_temp_dir("timeline");
         let session = root.join("mixed.jsonl");
         write_file(
@@ -480,6 +666,28 @@ mod tests {
         assert_eq!(payload.error_code.as_deref(), Some(ERR_PARSE_PARTIAL));
         assert_eq!(payload.errors.len(), 1);
         assert_eq!(payload.events.len(), 2);
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn list_projects_prefers_cwd_name_when_available() {
+        clear_project_cwd_cache();
+        let root = unique_temp_dir("projects-cwd");
+        let encoded = root.join("d-Hank-Dropbox-Claude-History");
+        fs::create_dir_all(&encoded).expect("create encoded project");
+        write_file(
+            &encoded.join("a.jsonl"),
+            "{\"cwd\":\"D:\\\\Hank\\\\Dropbox\\\\Claude-History\\\\actual-project\"}\n",
+        );
+
+        let projects = list_projects(Some(root.to_string_lossy().to_string())).expect("list projects");
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "actual-project");
+        assert_eq!(
+            projects[0].cwd_path.as_deref(),
+            Some("D:\\Hank\\Dropbox\\Claude-History\\actual-project")
+        );
 
         fs::remove_dir_all(root).expect("cleanup");
     }

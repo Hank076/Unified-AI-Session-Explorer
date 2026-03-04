@@ -20,6 +20,7 @@ const LOCALE_STORAGE_KEY = "claude_history_locale";
 
 const state = {
   projects: [],
+  projectSearchQuery: "",
   entries: [],
   selectedProjectPath: "",
   selectedEntryPath: "",
@@ -42,6 +43,7 @@ const refs = {
   resizerLeft: null,
   resizerMiddle: null,
   projectsList: null,
+  projectsSearchInput: null,
   entriesList: null,
   viewerTitle: null,
   viewerMeta: null,
@@ -133,6 +135,60 @@ function normalizeDisplayPath(path) {
     return value.replaceAll("/", "\\");
   }
   return value.replaceAll("\\", "/");
+}
+
+function detectHomePrefix(path) {
+  const value = normalizeDisplayPath(path);
+  const windowsMatch = value.match(/^[A-Za-z]:\\Users\\[^\\]+/);
+  if (windowsMatch) return windowsMatch[0];
+  const unixMatch = value.match(/^\/(?:home|Users)\/[^/]+/);
+  if (unixMatch) return unixMatch[0];
+  return "";
+}
+
+function abbreviateHomePath(path) {
+  const value = normalizeDisplayPath(path);
+  const homePrefix = detectHomePrefix(value);
+  if (!homePrefix) return value;
+  if (!value.startsWith(homePrefix)) return value;
+  const suffix = value.slice(homePrefix.length);
+  return suffix ? `~${suffix}` : "~";
+}
+
+function getProjectDisplayName(project) {
+  const rawName = String(project?.name || "").trim();
+  if (rawName) return rawName;
+
+  const normalizedPath = normalizeDisplayPath(project?.path || "");
+  const parts = normalizedPath.split(/[\\/]/).filter(Boolean);
+  if (parts.length > 0) return parts[parts.length - 1];
+
+  const decoded = decodeProjectLabel(String(project?.name || ""));
+  const decodedParts = normalizeDisplayPath(decoded).split(/[\\/]/).filter(Boolean);
+  if (decodedParts.length > 0) return decodedParts[decodedParts.length - 1];
+  return decoded || tt("panel.projects");
+}
+
+function doesProjectMatchSearch(project, query) {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const name = getProjectDisplayName(project).toLowerCase();
+  const cwdPath = normalizeDisplayPath(project?.cwdPath || "").toLowerCase();
+  const fullPath = normalizeDisplayPath(project?.path || "").toLowerCase();
+  const abbreviatedPath = abbreviateHomePath(project?.cwdPath || project?.path || "").toLowerCase();
+  return (
+    name.includes(normalizedQuery) ||
+    cwdPath.includes(normalizedQuery) ||
+    fullPath.includes(normalizedQuery) ||
+    abbreviatedPath.includes(normalizedQuery)
+  );
+}
+
+function updateProjectSearchTexts() {
+  if (!refs.projectsSearchInput) return;
+  refs.projectsSearchInput.placeholder = tt("project.searchPlaceholder");
+  refs.projectsSearchInput.setAttribute("aria-label", tt("project.searchAria"));
 }
 
 function getSystemPrefersDark() {
@@ -236,6 +292,7 @@ function setLocale(locale, { persist = true } = {}) {
   if (persist) saveLocale(state.locale);
   if (refs.localeSelect) refs.localeSelect.value = state.locale;
   applyStaticTranslations();
+  updateProjectSearchTexts();
   renderProjects();
   renderEntries();
   if (!state.selectedEntryPath) clearViewer();
@@ -310,17 +367,33 @@ function setHideSystemEventsVisible(visible) {
 
 function renderProjects() {
   refs.projectsList.innerHTML = "";
-  for (const project of state.projects) {
+  const visibleProjects = state.projects.filter((project) =>
+    doesProjectMatchSearch(project, state.projectSearchQuery),
+  );
+  for (const project of visibleProjects) {
     const li = document.createElement("li");
     const button = document.createElement("button");
-    button.className = "list-btn";
+    button.className = "list-btn project-btn";
     if (state.selectedProjectPath === project.path) button.dataset.active = "true";
-    const label = decodeProjectLabel(project.name);
-    button.textContent = label;
-    bindPathHover(button, label, { delayMs: 1600 });
+    const displayName = getProjectDisplayName(project);
+    const sourcePath = project.cwdPath || project.path;
+    const fullPath = normalizeDisplayPath(sourcePath);
+    const displayPath = abbreviateHomePath(sourcePath);
+
+    const nameNode = createElement("div", "project-name", displayName);
+    const pathNode = createElement("div", "project-path", displayPath);
+    button.append(nameNode, pathNode);
+    bindPathHover(button, fullPath, { delayMs: 1600 });
     button.addEventListener("click", () => selectProject(project.path));
     li.appendChild(button);
     refs.projectsList.appendChild(li);
+  }
+
+  if (visibleProjects.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "list-empty";
+    empty.textContent = tt("project.empty");
+    refs.projectsList.appendChild(empty);
   }
 }
 
@@ -1612,6 +1685,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.resizerLeft = document.querySelector("#resizer-left");
   refs.resizerMiddle = document.querySelector("#resizer-middle");
   refs.projectsList = document.querySelector("#projects-list");
+  refs.projectsSearchInput = document.querySelector("#projects-search-input");
   refs.entriesList = document.querySelector("#entries-list");
   refs.viewerTitle = document.querySelector("#viewer-title");
   refs.viewerMeta = document.querySelector("#viewer-meta");
@@ -1626,6 +1700,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   for (const button of refs.themeButtons) {
     button.addEventListener("click", () => {
       setThemeMode(button.dataset.themeMode, { persist: true });
+    });
+  }
+
+  if (refs.projectsSearchInput) {
+    refs.projectsSearchInput.addEventListener("input", (event) => {
+      state.projectSearchQuery = String(event.target.value || "");
+      renderProjects();
     });
   }
 
