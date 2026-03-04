@@ -376,8 +376,10 @@ function bindPathHover(element, text, options = {}) {
 }
 
 function setHideSystemEventsVisible(visible) {
-  if (!refs.hideSystemEventsWrap) return;
-  refs.hideSystemEventsWrap.style.display = visible ? "inline-flex" : "none";
+  if (!refs.hideSystemEventsWrap || !refs.hideSystemEventsToggle) return;
+  refs.hideSystemEventsWrap.style.visibility = visible ? "visible" : "hidden";
+  refs.hideSystemEventsWrap.style.pointerEvents = visible ? "auto" : "none";
+  refs.hideSystemEventsToggle.disabled = !visible;
   refs.hideSystemEventsWrap.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
@@ -465,6 +467,12 @@ function buildSessionMetaPath(sessionFileName) {
   const project = findSelectedProject();
   const projectName = project ? getProjectDisplayName(project) : tt("panel.projects");
   return `${projectName} / ${sessionFileName || tt("viewer.timeline")}`;
+}
+
+function buildMemoryMetaPath(memoryFileName) {
+  const project = findSelectedProject();
+  const projectName = project ? getProjectDisplayName(project) : tt("panel.projects");
+  return `${projectName} / memory / ${memoryFileName || "memory.md"}`;
 }
 
 function formatMetaDay(value) {
@@ -663,7 +671,6 @@ function isTopMemoryFile(path, label) {
 function renderMemory(payload) {
   const fileName = String(payload.path || "").split(/[\\/]/).pop() || "memory";
   refs.viewerTitle.textContent = fileName;
-  renderViewerMeta(normalizeDisplayPath(payload.path), "");
   refs.viewerContent.innerHTML = `<pre class="memory-block">${escapeHtml(payload.content)}</pre>`;
 }
 
@@ -1837,6 +1844,14 @@ async function selectEntry(entry) {
       ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
       : tt("viewer.metaSummaryNoDate", { count: "-" });
     refs.viewerTitle.textContent = tt("viewer.timeline");
+    renderViewerMeta(metaPath, metaRight);
+  }
+  if (entry.entryType === "memory_file") {
+    const metaDate = formatMetaDay(entry.modifiedMs) || "";
+    const metaPath = buildMemoryMetaPath(String(entry.label || ""));
+    const metaRight = metaDate
+      ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
+      : tt("viewer.metaSummaryNoDate", { count: "-" });
     renderViewerMeta(metaPath, metaRight);
   }
 
