@@ -174,13 +174,13 @@ function doesProjectMatchSearch(project, query) {
   if (!normalizedQuery) return true;
 
   const name = getProjectDisplayName(project).toLowerCase();
-  const cwdPath = normalizeDisplayPath(project?.cwdPath || "").toLowerCase();
-  const fullPath = normalizeDisplayPath(project?.path || "").toLowerCase();
-  const abbreviatedPath = abbreviateHomePath(project?.cwdPath || project?.path || "").toLowerCase();
+  const preferredPath = normalizeDisplayPath(
+    project?.cwdPath || decodeProjectLabel(String(project?.name || "")),
+  ).toLowerCase();
+  const abbreviatedPath = abbreviateHomePath(preferredPath).toLowerCase();
   return (
     name.includes(normalizedQuery) ||
-    cwdPath.includes(normalizedQuery) ||
-    fullPath.includes(normalizedQuery) ||
+    preferredPath.includes(normalizedQuery) ||
     abbreviatedPath.includes(normalizedQuery)
   );
 }
