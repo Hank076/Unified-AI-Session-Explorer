@@ -169,6 +169,50 @@
         </section>
       </section>
     </main>
+    <dialog id="project-delete-dialog" class="danger-dialog" aria-labelledby="project-delete-title">
+      <form id="project-delete-form" method="dialog" class="danger-dialog-card" novalidate>
+        <h3 id="project-delete-title" data-i18n="project.delete.title">Danger Zone</h3>
+        <p class="danger-dialog-desc" data-i18n="project.delete.description">
+          Deleting the project permanently removes sessions and memory files.
+        </p>
+        <p id="project-delete-impact" class="danger-dialog-impact"></p>
+        <p id="project-delete-message" class="danger-dialog-confirm"></p>
+        <label class="danger-dialog-label" for="project-delete-input" data-i18n="project.delete.inputLabel">
+          Project name
+        </label>
+        <input
+          id="project-delete-input"
+          class="danger-dialog-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          data-i18n-aria-label="project.delete.inputLabel"
+          aria-label="Project name"
+        />
+        <div class="danger-dialog-actions">
+          <button id="project-delete-cancel" type="button" class="dialog-btn" data-i18n="action.cancel">Cancel</button>
+          <button id="project-delete-confirm" type="button" class="dialog-btn dialog-btn--danger" disabled data-i18n="action.confirmDelete">
+            Delete forever
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="session-delete-dialog" class="danger-dialog" aria-labelledby="session-delete-title">
+      <form id="session-delete-form" method="dialog" class="danger-dialog-card" novalidate>
+        <h3 id="session-delete-title" data-i18n="session.delete.title">Delete Conversation</h3>
+        <p id="session-delete-message" class="danger-dialog-desc"></p>
+        <div class="danger-dialog-actions">
+          <button id="session-delete-cancel" type="button" class="dialog-btn" data-i18n="action.cancel">Cancel</button>
+          <button id="session-delete-confirm" type="button" class="dialog-btn dialog-btn--danger" data-i18n="action.deleteConversation">
+            Delete
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div id="undo-toast" class="undo-toast" role="status" aria-live="polite" hidden>
+      <span id="undo-toast-message"></span>
+      <button id="undo-toast-undo" type="button" class="undo-toast-btn" data-i18n="action.undo">Undo</button>
+    </div>
     <div id="path-tooltip" class="path-tooltip" role="tooltip" hidden></div>
   </body>
 </html>

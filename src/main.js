@@ -15,6 +15,7 @@ const { invoke } = window.__TAURI__.core;
 
 const TECH_PREVIEW_COUNT = 20;
 const CHAT_PREVIEW_LENGTH = 380;
+const SESSION_DELETE_UNDO_MS = 8000;
 const THEME_STORAGE_KEY = "claude_history_theme_mode";
 const LOCALE_STORAGE_KEY = "claude_history_locale";
 
@@ -35,6 +36,10 @@ const state = {
   themeMode: "auto",
   resolvedTheme: "dark",
   locale: "en-US",
+  pendingSessionDelete: null,
+  pendingSessionDeleteCandidate: null,
+  pendingProjectDelete: null,
+  pendingProjectPath: "",
 };
 
 const refs = {
@@ -59,6 +64,21 @@ const refs = {
   pathTooltip: null,
   themeButtons: [],
   localeSelect: null,
+  toast: null,
+  toastMessage: null,
+  toastUndoButton: null,
+  projectDeleteDialog: null,
+  projectDeleteForm: null,
+  projectDeleteImpact: null,
+  projectDeleteMessage: null,
+  projectDeleteInput: null,
+  projectDeleteConfirmButton: null,
+  projectDeleteCancelButton: null,
+  sessionDeleteDialog: null,
+  sessionDeleteForm: null,
+  sessionDeleteMessage: null,
+  sessionDeleteConfirmButton: null,
+  sessionDeleteCancelButton: null,
 };
 
 function tt(key, params) {
@@ -206,6 +226,12 @@ function updateViewerSearchTexts() {
   refs.viewerSearchInput.setAttribute("aria-label", tt("viewer.searchAria"));
 }
 
+function updateProjectDeleteTexts() {
+  if (!refs.projectDeleteInput) return;
+  refs.projectDeleteInput.placeholder = tt("project.delete.inputPlaceholder");
+  refs.projectDeleteInput.setAttribute("aria-label", tt("project.delete.inputLabel"));
+}
+
 function getSystemPrefersDark() {
   try {
     return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? true;
@@ -309,6 +335,7 @@ function setLocale(locale, { persist = true } = {}) {
   applyStaticTranslations();
   updateProjectSearchTexts();
   updateViewerSearchTexts();
+  updateProjectDeleteTexts();
   renderProjects();
   renderEntries();
   if (!state.selectedEntryPath) clearViewer();
@@ -397,6 +424,374 @@ function setViewerSearchVisible(visible) {
   refs.viewerSearchWrap.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
+function createTrashIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.classList.add("row-action-icon");
+
+  const addPath = (d) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.8");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(path);
+  };
+
+  addPath("M4 7h16");
+  addPath("M9.5 3.5h5");
+  addPath("M7.5 7l.7 11.2a1 1 0 0 0 1 .8h5.6a1 1 0 0 0 1-.8L16.5 7");
+  addPath("M10 10.5v5.5");
+  addPath("M14 10.5v5.5");
+  return svg;
+}
+
+function createActionWrap(...buttons) {
+  const wrap = createElement("div", "row-actions");
+  for (const button of buttons) {
+    if (button) wrap.appendChild(button);
+  }
+  return wrap;
+}
+
+function createIconActionButton({ ariaLabel, onClick, title = "", kind = "danger", icon = null }) {
+  const button = document.createElement("button");
+  button.className = `row-action-btn row-action-btn--${kind}`;
+  button.type = "button";
+  button.title = title || ariaLabel;
+  button.setAttribute("aria-label", ariaLabel);
+  if (icon) button.appendChild(icon);
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  });
+  return button;
+}
+
+function showUndoToast(message, onUndo) {
+  if (!refs.toast || !refs.toastMessage || !refs.toastUndoButton) return;
+  refs.toastMessage.textContent = message;
+  refs.toast.hidden = false;
+  refs.toastUndoButton.onclick = () => {
+    onUndo();
+  };
+}
+
+function hideUndoToast() {
+  if (!refs.toast || !refs.toastMessage || !refs.toastUndoButton) return;
+  refs.toast.hidden = true;
+  refs.toastMessage.textContent = "";
+  refs.toastUndoButton.onclick = null;
+}
+
+function clearPendingSessionTimers(pending) {
+  if (!pending) return;
+  if (pending.timerId) {
+    window.clearTimeout(pending.timerId);
+    pending.timerId = null;
+  }
+  if (pending.countdownIntervalId) {
+    window.clearInterval(pending.countdownIntervalId);
+    pending.countdownIntervalId = null;
+  }
+}
+
+function clearPendingProjectTimers(pending) {
+  if (!pending) return;
+  if (pending.timerId) {
+    window.clearTimeout(pending.timerId);
+    pending.timerId = null;
+  }
+  if (pending.countdownIntervalId) {
+    window.clearInterval(pending.countdownIntervalId);
+    pending.countdownIntervalId = null;
+  }
+}
+
+async function refreshEntriesForSelectedProject() {
+  if (!state.selectedProjectPath) {
+    state.entries = [];
+    renderEntries();
+    return;
+  }
+  state.entries = await invoke("list_project_entries", {
+    projectPath: state.selectedProjectPath,
+  });
+  renderEntries();
+}
+
+function clearSelectedEntryIfMatchesPaths(paths) {
+  if (!state.selectedEntryPath) return;
+  if (!paths.includes(state.selectedEntryPath)) return;
+  state.selectedEntryPath = "";
+  state.selectedEntryType = "";
+  clearViewer();
+}
+
+function openSessionDeleteDialog(entry) {
+  if (!refs.sessionDeleteDialog || !refs.sessionDeleteMessage) return;
+  state.pendingSessionDeleteCandidate = entry;
+  refs.sessionDeleteMessage.textContent = tt("session.delete.confirmText", {
+    name: String(entry.label || ""),
+  });
+  refs.sessionDeleteDialog.showModal();
+}
+
+function closeSessionDeleteDialog() {
+  if (!refs.sessionDeleteDialog) return;
+  if (refs.sessionDeleteDialog.open) refs.sessionDeleteDialog.close();
+  state.pendingSessionDeleteCandidate = null;
+}
+
+function confirmSessionDelete() {
+  const entry = state.pendingSessionDeleteCandidate;
+  closeSessionDeleteDialog();
+  if (!entry) return;
+  queueSessionDelete(entry);
+}
+
+function queueSessionDelete(entry) {
+  const isSession = entry.entryType === "session";
+  if (!isSession && entry.entryType !== "subagent_session") return;
+
+  const pendingProject = state.pendingProjectDelete;
+  if (pendingProject) {
+    clearPendingProjectTimers(pendingProject);
+    state.pendingProjectDelete = null;
+    hideUndoToast();
+    setStatus(tt("status.deleteCancelled"), "info");
+  }
+
+  const previousPending = state.pendingSessionDelete;
+  if (previousPending?.timerId) {
+    clearPendingSessionTimers(previousPending);
+    hideUndoToast();
+    state.pendingSessionDelete = null;
+    void executeSessionDelete(previousPending);
+  }
+
+  const removedPaths = [entry.path];
+  if (isSession) {
+    const parentSessionStem = String(entry.label || "").replace(/\.jsonl$/i, "");
+    for (const item of state.entries) {
+      if (item.entryType === "subagent_session" && item.parentSession === parentSessionStem) {
+        removedPaths.push(item.path);
+      }
+    }
+  }
+  clearSelectedEntryIfMatchesPaths(removedPaths);
+  state.entries = state.entries.filter((item) => !removedPaths.includes(item.path));
+  renderEntries();
+
+  const pending = {
+    path: entry.path,
+    projectPath: state.selectedProjectPath,
+    timerId: null,
+    countdownIntervalId: null,
+    remainingSeconds: Math.floor(SESSION_DELETE_UNDO_MS / 1000),
+  };
+  const updateToastCountdown = () => {
+    showUndoToast(
+      tt("session.delete.toast", { seconds: pending.remainingSeconds }),
+      () => {
+        clearPendingSessionTimers(pending);
+        if (state.pendingSessionDelete === pending) state.pendingSessionDelete = null;
+        hideUndoToast();
+        void refreshEntriesForSelectedProject();
+        setStatus(tt("status.deleteCancelled"), "info");
+      },
+    );
+  };
+
+  updateToastCountdown();
+  pending.countdownIntervalId = window.setInterval(() => {
+    if (pending.remainingSeconds <= 1) {
+      window.clearInterval(pending.countdownIntervalId);
+      pending.countdownIntervalId = null;
+      return;
+    }
+    pending.remainingSeconds -= 1;
+    updateToastCountdown();
+  }, 1000);
+
+  pending.timerId = window.setTimeout(() => {
+    void executeSessionDelete(pending);
+  }, SESSION_DELETE_UNDO_MS);
+  state.pendingSessionDelete = pending;
+}
+
+async function executeSessionDelete(pending) {
+  if (!pending) return;
+  clearPendingSessionTimers(pending);
+  if (state.pendingSessionDelete === pending) state.pendingSessionDelete = null;
+  hideUndoToast();
+  try {
+    await invoke("delete_session", { sessionPath: pending.path });
+    if (pending.projectPath === state.selectedProjectPath) {
+      await refreshEntriesForSelectedProject();
+    }
+    setStatus(tt("status.sessionDeleted"), "info");
+  } catch (errorCode) {
+    if (pending.projectPath === state.selectedProjectPath) {
+      await refreshEntriesForSelectedProject();
+    }
+    setStatus(formatError(String(errorCode)), "error");
+  }
+}
+
+function updateProjectDeleteConfirmState() {
+  if (!refs.projectDeleteInput || !refs.projectDeleteConfirmButton) return;
+  const project = findSelectedProject() || state.projects.find((item) => item.path === state.pendingProjectPath);
+  const expectedName = project ? getProjectDisplayName(project) : "";
+  const currentValue = String(refs.projectDeleteInput.value || "").trim();
+  refs.projectDeleteConfirmButton.disabled = !expectedName || currentValue !== expectedName;
+}
+
+function formatProjectDeleteImpactSummary(impact) {
+  const sessionCount = Number(impact?.sessionCount || 0);
+  const subagentCount = Number(impact?.subagentSessionCount || 0);
+  const memoryCount = Number(impact?.memoryFileCount || 0);
+  const totalCount = Number(impact?.totalFileCount || 0);
+  const totalSize = formatBytes(Number(impact?.totalSizeBytes || 0));
+  return tt("project.delete.impactSummary", {
+    sessionCount,
+    subagentCount,
+    memoryCount,
+    totalCount,
+    totalSize,
+  });
+}
+
+async function openProjectDeleteDialog(project) {
+  if (
+    !refs.projectDeleteDialog ||
+    !refs.projectDeleteInput ||
+    !refs.projectDeleteMessage ||
+    !refs.projectDeleteImpact
+  ) {
+    return;
+  }
+  state.pendingProjectPath = project.path;
+  refs.projectDeleteMessage.textContent = tt("project.delete.confirmText", {
+    name: getProjectDisplayName(project),
+  });
+  refs.projectDeleteImpact.textContent = tt("project.delete.impactLoading");
+  refs.projectDeleteInput.value = "";
+  updateProjectDeleteConfirmState();
+  refs.projectDeleteDialog.showModal();
+  refs.projectDeleteInput.focus();
+  try {
+    const impact = await invoke("get_project_delete_impact", { projectPath: project.path });
+    refs.projectDeleteImpact.textContent = formatProjectDeleteImpactSummary(impact);
+  } catch {
+    refs.projectDeleteImpact.textContent = tt("project.delete.impactUnavailable");
+  }
+}
+
+function closeProjectDeleteDialog() {
+  if (!refs.projectDeleteDialog) return;
+  if (refs.projectDeleteDialog.open) refs.projectDeleteDialog.close();
+  if (refs.projectDeleteImpact) refs.projectDeleteImpact.textContent = "";
+  state.pendingProjectPath = "";
+}
+
+async function confirmProjectDelete() {
+  const projectPath = state.pendingProjectPath;
+  if (!projectPath) return;
+  closeProjectDeleteDialog();
+  queueProjectDelete(projectPath);
+}
+
+function queueProjectDelete(projectPath) {
+  const project = findProjectByPath(projectPath);
+  if (!project) {
+    setStatus(tt("error.NOT_FOUND"), "error");
+    return;
+  }
+
+  const pendingSession = state.pendingSessionDelete;
+  if (pendingSession) {
+    clearPendingSessionTimers(pendingSession);
+    state.pendingSessionDelete = null;
+    hideUndoToast();
+    void refreshEntriesForSelectedProject();
+  }
+
+  const previousPending = state.pendingProjectDelete;
+  if (previousPending) {
+    clearPendingProjectTimers(previousPending);
+    hideUndoToast();
+    state.pendingProjectDelete = null;
+  }
+
+  const pending = {
+    projectPath,
+    projectName: getProjectDisplayName(project),
+    timerId: null,
+    countdownIntervalId: null,
+    remainingSeconds: Math.floor(SESSION_DELETE_UNDO_MS / 1000),
+  };
+
+  const updateToastCountdown = () => {
+    showUndoToast(
+      tt("project.delete.toast", {
+        name: pending.projectName,
+        seconds: pending.remainingSeconds,
+      }),
+      () => {
+        clearPendingProjectTimers(pending);
+        if (state.pendingProjectDelete === pending) state.pendingProjectDelete = null;
+        hideUndoToast();
+        setStatus(tt("status.deleteCancelled"), "info");
+      },
+    );
+  };
+
+  updateToastCountdown();
+  pending.countdownIntervalId = window.setInterval(() => {
+    if (pending.remainingSeconds <= 1) {
+      window.clearInterval(pending.countdownIntervalId);
+      pending.countdownIntervalId = null;
+      return;
+    }
+    pending.remainingSeconds -= 1;
+    updateToastCountdown();
+  }, 1000);
+  pending.timerId = window.setTimeout(() => {
+    void executeProjectDelete(pending);
+  }, SESSION_DELETE_UNDO_MS);
+  state.pendingProjectDelete = pending;
+}
+
+async function executeProjectDelete(pending) {
+  if (!pending) return;
+  clearPendingProjectTimers(pending);
+  if (state.pendingProjectDelete === pending) state.pendingProjectDelete = null;
+  hideUndoToast();
+  try {
+    await invoke("delete_project", { projectPath: pending.projectPath });
+    const wasSelected = state.selectedProjectPath === pending.projectPath;
+    state.projects = state.projects.filter((project) => project.path !== pending.projectPath);
+    renderProjects();
+    if (wasSelected) {
+      state.selectedProjectPath = "";
+      state.selectedEntryPath = "";
+      state.selectedEntryType = "";
+      state.entries = [];
+      renderEntries();
+      clearViewer();
+    }
+    setStatus(tt("status.projectDeleted"), "info");
+  } catch (errorCode) {
+    setStatus(formatError(String(errorCode)), "error");
+  }
+}
+
 function renderProjects() {
   refs.projectsList.innerHTML = "";
   const visibleProjects = state.projects.filter((project) =>
@@ -417,7 +812,21 @@ function renderProjects() {
     button.append(nameNode, pathNode);
     bindPathHover(button, fullPath, { delayMs: 1600 });
     button.addEventListener("click", () => selectProject(project.path));
-    li.appendChild(button);
+    const row = createElement("div", "list-row");
+    row.append(button);
+    row.append(
+      createActionWrap(
+        createIconActionButton({
+          ariaLabel: tt("aria.deleteProject", { name: displayName }),
+          onClick: () => {
+            void openProjectDeleteDialog(project);
+          },
+          kind: "danger",
+          icon: createTrashIcon(),
+        }),
+      ),
+    );
+    li.appendChild(row);
     refs.projectsList.appendChild(li);
   }
 
@@ -457,6 +866,10 @@ function formatBytes(sizeBytes) {
 
 function findSelectedProject() {
   return state.projects.find((project) => project.path === state.selectedProjectPath) || null;
+}
+
+function findProjectByPath(projectPath) {
+  return state.projects.find((project) => project.path === projectPath) || null;
 }
 
 function findSelectedEntry() {
@@ -542,12 +955,13 @@ function renderEntries() {
     const expanded = hasChildren ? Boolean(state.entryExpandState[sessionStem]) : false;
 
     const li = document.createElement("li");
-    const row = createElement("div", "entry-row");
+    const row = createElement("div", "entry-row list-row");
     if (hasChildren) row.dataset.hasChildren = "true";
-
     row.appendChild(createEntryButton(entry, { hasChildren }));
+
+    let toggle = null;
     if (hasChildren) {
-      const toggle = createElement("button", "entry-toggle", expanded ? "▾" : "▸");
+      toggle = createElement("button", "entry-toggle", expanded ? "▾" : "▸");
       toggle.type = "button";
       toggle.title = expanded ? tt("action.collapseSubagent") : tt("action.expandSubagent");
       toggle.setAttribute("aria-label", toggle.title);
@@ -557,8 +971,19 @@ function renderEntries() {
         state.entryExpandState[sessionStem] = !expanded;
         renderEntries();
       });
-      row.appendChild(toggle);
     }
+
+    row.append(
+      createActionWrap(
+        toggle,
+        createIconActionButton({
+          ariaLabel: tt("aria.deleteConversation", { name: String(entry.label || "") }),
+          onClick: () => openSessionDeleteDialog(entry),
+          kind: "danger",
+          icon: createTrashIcon(),
+        }),
+      ),
+    );
     li.appendChild(row);
     refs.entriesList.appendChild(li);
 
@@ -566,12 +991,24 @@ function renderEntries() {
     for (const child of children) {
       const childLi = document.createElement("li");
       childLi.className = "entry-child-item";
-      childLi.appendChild(
+      const childRow = createElement("div", "list-row");
+      childRow.appendChild(
         createEntryButton(child, {
           primaryText: tt("entry.childPrefix", { time: formatEntryTime(child.modifiedMs) }),
           isSubagent: true,
         }),
       );
+      childRow.append(
+        createActionWrap(
+          createIconActionButton({
+            ariaLabel: tt("aria.deleteConversation", { name: String(child.label || "") }),
+            onClick: () => openSessionDeleteDialog(child),
+            kind: "danger",
+            icon: createTrashIcon(),
+          }),
+        ),
+      );
+      childLi.appendChild(childRow);
       refs.entriesList.appendChild(childLi);
     }
   }
@@ -1917,6 +2354,21 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.pathTooltip = document.querySelector("#path-tooltip");
   refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
   refs.localeSelect = document.querySelector("#locale-select");
+  refs.toast = document.querySelector("#undo-toast");
+  refs.toastMessage = document.querySelector("#undo-toast-message");
+  refs.toastUndoButton = document.querySelector("#undo-toast-undo");
+  refs.projectDeleteDialog = document.querySelector("#project-delete-dialog");
+  refs.projectDeleteForm = document.querySelector("#project-delete-form");
+  refs.projectDeleteImpact = document.querySelector("#project-delete-impact");
+  refs.projectDeleteMessage = document.querySelector("#project-delete-message");
+  refs.projectDeleteInput = document.querySelector("#project-delete-input");
+  refs.projectDeleteConfirmButton = document.querySelector("#project-delete-confirm");
+  refs.projectDeleteCancelButton = document.querySelector("#project-delete-cancel");
+  refs.sessionDeleteDialog = document.querySelector("#session-delete-dialog");
+  refs.sessionDeleteForm = document.querySelector("#session-delete-form");
+  refs.sessionDeleteMessage = document.querySelector("#session-delete-message");
+  refs.sessionDeleteConfirmButton = document.querySelector("#session-delete-confirm");
+  refs.sessionDeleteCancelButton = document.querySelector("#session-delete-cancel");
 
   for (const button of refs.themeButtons) {
     button.addEventListener("click", () => {
@@ -1936,7 +2388,37 @@ window.addEventListener("DOMContentLoaded", async () => {
       renderTimelineView();
     });
   }
+  refs.projectDeleteCancelButton?.addEventListener("click", () => {
+    closeProjectDeleteDialog();
+  });
+  refs.projectDeleteInput?.addEventListener("input", () => {
+    updateProjectDeleteConfirmState();
+  });
+  refs.projectDeleteConfirmButton?.addEventListener("click", async () => {
+    await confirmProjectDelete();
+  });
+  refs.projectDeleteDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeProjectDeleteDialog();
+  });
+  refs.projectDeleteForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+  });
+  refs.sessionDeleteCancelButton?.addEventListener("click", () => {
+    closeSessionDeleteDialog();
+  });
+  refs.sessionDeleteConfirmButton?.addEventListener("click", () => {
+    confirmSessionDelete();
+  });
+  refs.sessionDeleteDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeSessionDeleteDialog();
+  });
+  refs.sessionDeleteForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+  });
 
+  hideUndoToast();
   state.hideSystemEvents = true;
   updateHideSystemEventsToggle();
   refs.hideSystemEventsToggle.addEventListener("click", () => {

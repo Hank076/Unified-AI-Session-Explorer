@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev:web": "http-server ./src -p 1420 -c-1",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:e2e": "node --test tests/e2e-delete-ui.test.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "http-server": "^14.1.1"
+    "http-server": "^14.1.1",
+    "jsdom": "^26.1.0"
   }
 }

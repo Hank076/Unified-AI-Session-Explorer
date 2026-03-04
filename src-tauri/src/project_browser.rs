@@ -88,6 +88,16 @@ pub struct SessionTimelinePayload {
     pub metadata: SessionMetadata,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDeleteImpact {
+    pub session_count: usize,
+    pub subagent_session_count: usize,
+    pub memory_file_count: usize,
+    pub total_file_count: usize,
+    pub total_size_bytes: u64,
+}
+
 #[tauri::command]
 pub fn list_projects(base_path: Option<String>) -> Result<Vec<Project>, String> {
     let root = resolve_root_path(base_path.as_deref())?;
@@ -309,6 +319,77 @@ pub fn read_session_timeline(
             start_time,
             end_time,
         },
+    })
+}
+
+#[tauri::command]
+pub fn delete_session(session_path: String, base_path: Option<String>) -> Result<(), String> {
+    let root = resolve_root_path(base_path.as_deref())?;
+    let session_file = validate_under_root(&root, Path::new(&session_path))?;
+    if !session_file.is_file() {
+        return Err(ERR_NOT_FOUND.to_string());
+    }
+    if !has_jsonl_extension(&session_file) {
+        return Err(ERR_READ_FAILED.to_string());
+    }
+
+    fs::remove_file(&session_file).map_err(map_read_error)?;
+
+    if let Some(parent) = session_file.parent() {
+        let stem = session_file
+            .file_stem()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if !stem.is_empty() {
+            let subagent_dir = parent.join(&stem);
+            if subagent_dir.is_dir() {
+                fs::remove_dir_all(&subagent_dir).map_err(map_read_error)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_project(project_path: String, base_path: Option<String>) -> Result<(), String> {
+    let root = resolve_root_path(base_path.as_deref())?;
+    let project_dir = validate_under_root(&root, Path::new(&project_path))?;
+    if !project_dir.is_dir() {
+        return Err(ERR_NOT_FOUND.to_string());
+    }
+
+    fs::remove_dir_all(project_dir).map_err(map_read_error)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_project_delete_impact(
+    project_path: String,
+    base_path: Option<String>,
+) -> Result<ProjectDeleteImpact, String> {
+    let entries = list_project_entries(project_path, base_path)?;
+    let mut session_count = 0usize;
+    let mut subagent_session_count = 0usize;
+    let mut memory_file_count = 0usize;
+    let mut total_size_bytes = 0u64;
+
+    for entry in &entries {
+        match entry.entry_type.as_str() {
+            "session" => session_count += 1,
+            "subagent_session" => subagent_session_count += 1,
+            "memory_file" => memory_file_count += 1,
+            _ => {}
+        }
+        total_size_bytes = total_size_bytes.saturating_add(entry.size_bytes.unwrap_or(0));
+    }
+
+    Ok(ProjectDeleteImpact {
+        session_count,
+        subagent_session_count,
+        memory_file_count,
+        total_file_count: entries.len(),
+        total_size_bytes,
     })
 }
 
@@ -688,6 +769,76 @@ mod tests {
             projects[0].cwd_path.as_deref(),
             Some("D:\\Hank\\Dropbox\\Claude-History\\actual-project")
         );
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn delete_session_removes_jsonl_and_subagent_folder() {
+        clear_project_cwd_cache();
+        let root = unique_temp_dir("delete-session");
+        let project = root.join("demo");
+        fs::create_dir_all(&project).expect("create project");
+        let session = project.join("main.jsonl");
+        write_file(&session, "{\"content\":\"hello\"}\n");
+        let subagent = project.join("main").join("subagents").join("child.jsonl");
+        write_file(&subagent, "{\"content\":\"child\"}\n");
+
+        delete_session(
+            session.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+        )
+        .expect("delete session");
+
+        assert!(!session.exists());
+        assert!(!project.join("main").exists());
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn delete_project_removes_directory_tree() {
+        clear_project_cwd_cache();
+        let root = unique_temp_dir("delete-project");
+        let project = root.join("demo");
+        fs::create_dir_all(&project).expect("create project");
+        write_file(&project.join("nested").join("a.jsonl"), "{\"content\":\"x\"}");
+
+        delete_project(
+            project.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+        )
+        .expect("delete project");
+
+        assert!(!project.exists());
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn get_project_delete_impact_counts_entries_and_size() {
+        clear_project_cwd_cache();
+        let root = unique_temp_dir("delete-impact");
+        let project = root.join("demo");
+        fs::create_dir_all(&project).expect("create project");
+        write_file(&project.join("memory").join("MEMORY.md"), "# memory");
+        write_file(&project.join("a.jsonl"), "{\"content\":\"root session\"}");
+        write_file(
+            &project.join("a").join("subagents").join("s1.jsonl"),
+            "{\"content\":\"child\"}",
+        );
+
+        let impact = get_project_delete_impact(
+            project.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+        )
+        .expect("get impact");
+
+        assert_eq!(impact.session_count, 1);
+        assert_eq!(impact.subagent_session_count, 1);
+        assert_eq!(impact.memory_file_count, 1);
+        assert_eq!(impact.total_file_count, 3);
+        assert!(impact.total_size_bytes > 0);
 
         fs::remove_dir_all(root).expect("cleanup");
     }

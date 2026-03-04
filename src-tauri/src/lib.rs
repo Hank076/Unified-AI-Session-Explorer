@@ -8,7 +8,10 @@ pub fn run() {
             project_browser::list_projects,
             project_browser::list_project_entries,
             project_browser::read_memory,
-            project_browser::read_session_timeline
+            project_browser::read_session_timeline,
+            project_browser::delete_session,
+            project_browser::delete_project,
+            project_browser::get_project_delete_impact
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
