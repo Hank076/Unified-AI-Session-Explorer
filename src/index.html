@@ -65,6 +65,7 @@
             <span data-i18n="language.label">Language</span>
             <select id="locale-select" aria-label="Language"></select>
           </label>
+          <button id="about-button" class="about-btn" type="button" data-i18n="about.button">About</button>
         </div>
       </header>
 
@@ -206,6 +207,37 @@
           <button id="session-delete-confirm" type="button" class="dialog-btn dialog-btn--danger" data-i18n="action.deleteConversation">
             Delete
           </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="about-dialog" class="info-dialog" aria-labelledby="about-dialog-title">
+      <form id="about-form" method="dialog" class="info-dialog-card">
+        <h3 id="about-dialog-title" data-i18n="about.title">About this app</h3>
+        <dl class="about-list">
+          <div class="about-row">
+            <dt data-i18n="about.program">Program</dt>
+            <dd>Unified AI Session Explorer</dd>
+          </div>
+          <div class="about-row">
+            <dt data-i18n="about.author">Author</dt>
+            <dd>Hank076</dd>
+          </div>
+          <div class="about-row">
+            <dt data-i18n="about.github">GitHub</dt>
+            <dd>
+              <a
+                class="about-link"
+                href="https://github.com/Hank076/Unified-AI-Session-Explorer"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                github.com/Hank076/Unified-AI-Session-Explorer
+              </a>
+            </dd>
+          </div>
+        </dl>
+        <div class="info-dialog-actions">
+          <button id="about-close" type="button" class="dialog-btn" data-i18n="action.close">Close</button>
         </div>
       </form>
     </dialog>

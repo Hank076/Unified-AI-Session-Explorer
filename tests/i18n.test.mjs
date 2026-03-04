@@ -34,3 +34,10 @@ test("t resolves translated strings and fallback behavior", () => {
   assert.equal(t("en-US", "status.projectsLoaded", { count: 3 }), "Loaded 3 projects.");
   assert.equal(t("fr-FR", "panel.session"), "Sessions");
 });
+
+test("t includes about dialog translations", () => {
+  assert.equal(t("zh-Hant-TW", "about.button"), "關於");
+  assert.equal(t("zh-Hant-TW", "about.author"), "作者");
+  assert.equal(t("en-US", "about.button"), "About");
+  assert.equal(t("en-US", "about.github"), "GitHub");
+});

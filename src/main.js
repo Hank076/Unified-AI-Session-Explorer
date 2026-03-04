@@ -64,6 +64,9 @@ const refs = {
   pathTooltip: null,
   themeButtons: [],
   localeSelect: null,
+  aboutButton: null,
+  aboutDialog: null,
+  aboutCloseButton: null,
   toast: null,
   toastMessage: null,
   toastUndoButton: null,
@@ -546,6 +549,16 @@ function closeSessionDeleteDialog() {
   if (!refs.sessionDeleteDialog) return;
   if (refs.sessionDeleteDialog.open) refs.sessionDeleteDialog.close();
   state.pendingSessionDeleteCandidate = null;
+}
+
+function openAboutDialog() {
+  if (!refs.aboutDialog) return;
+  refs.aboutDialog.showModal();
+}
+
+function closeAboutDialog() {
+  if (!refs.aboutDialog) return;
+  if (refs.aboutDialog.open) refs.aboutDialog.close();
 }
 
 function confirmSessionDelete() {
@@ -2354,6 +2367,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.pathTooltip = document.querySelector("#path-tooltip");
   refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
   refs.localeSelect = document.querySelector("#locale-select");
+  refs.aboutButton = document.querySelector("#about-button");
+  refs.aboutDialog = document.querySelector("#about-dialog");
+  refs.aboutCloseButton = document.querySelector("#about-close");
   refs.toast = document.querySelector("#undo-toast");
   refs.toastMessage = document.querySelector("#undo-toast-message");
   refs.toastUndoButton = document.querySelector("#undo-toast-undo");
@@ -2416,6 +2432,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   refs.sessionDeleteForm?.addEventListener("submit", (event) => {
     event.preventDefault();
+  });
+  refs.aboutButton?.addEventListener("click", () => {
+    openAboutDialog();
+  });
+  refs.aboutCloseButton?.addEventListener("click", () => {
+    closeAboutDialog();
+  });
+  refs.aboutDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeAboutDialog();
   });
 
   hideUndoToast();
