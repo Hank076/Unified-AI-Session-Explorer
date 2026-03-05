@@ -627,6 +627,11 @@ function clearSelectedEntryIfMatchesPaths(paths) {
   clearSelectedEntryState();
 }
 
+function closeDialogIfOpen(dialog) {
+  if (!dialog) return;
+  if (dialog.open) dialog.close();
+}
+
 function openSessionDeleteDialog(entry) {
   if (!refs.sessionDeleteDialog || !refs.sessionDeleteMessage) return;
   state.pendingSessionDeleteCandidate = entry;
@@ -637,8 +642,7 @@ function openSessionDeleteDialog(entry) {
 }
 
 function closeSessionDeleteDialog() {
-  if (!refs.sessionDeleteDialog) return;
-  if (refs.sessionDeleteDialog.open) refs.sessionDeleteDialog.close();
+  closeDialogIfOpen(refs.sessionDeleteDialog);
   state.pendingSessionDeleteCandidate = null;
 }
 
@@ -648,8 +652,7 @@ function openAboutDialog() {
 }
 
 function closeAboutDialog() {
-  if (!refs.aboutDialog) return;
-  if (refs.aboutDialog.open) refs.aboutDialog.close();
+  closeDialogIfOpen(refs.aboutDialog);
 }
 
 function confirmSessionDelete() {
@@ -784,8 +787,7 @@ async function openProjectDeleteDialog(project) {
 }
 
 function closeProjectDeleteDialog() {
-  if (!refs.projectDeleteDialog) return;
-  if (refs.projectDeleteDialog.open) refs.projectDeleteDialog.close();
+  closeDialogIfOpen(refs.projectDeleteDialog);
   if (refs.projectDeleteImpact) refs.projectDeleteImpact.textContent = "";
   state.pendingProjectPath = "";
 }
