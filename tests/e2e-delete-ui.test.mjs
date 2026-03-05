@@ -92,12 +92,62 @@ function createMockInvoke() {
                 model: "claude-sonnet-4-6",
                 content: [
                   { type: "text", text: "world" },
+                  { type: "thinking", thinking: "plan silently" },
                   { type: "tool_use", id: "toolu_123", name: "Bash", input: { command: "echo hi" } },
                 ],
                 usage: {
                   input_tokens: 1,
                   output_tokens: 403,
                 },
+              },
+            },
+          },
+          {
+            line: 21,
+            timestamp: "2026-03-04T10:02:10Z",
+            role: "assistant",
+            eventType: "message",
+            summary: "meta note",
+            raw: {
+              type: "assistant",
+              isMeta: true,
+              timestamp: "2026-03-04T10:02:10Z",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "meta note" }],
+              },
+            },
+          },
+          {
+            line: 22,
+            timestamp: "2026-03-04T10:02:11Z",
+            role: "user",
+            eventType: "message",
+            summary: "command call",
+            raw: {
+              type: "user",
+              uuid: "cmd-1",
+              timestamp: "2026-03-04T10:02:11Z",
+              message: {
+                role: "user",
+                content:
+                  "<command-name>/mcp</command-name>\n            <command-message>mcp</command-message>\n            <command-args>disable pencil</command-args>",
+              },
+            },
+          },
+          {
+            line: 23,
+            timestamp: "2026-03-04T10:02:12Z",
+            role: "user",
+            eventType: "message",
+            summary: "local command output",
+            raw: {
+              type: "user",
+              parentUuid: "cmd-1",
+              timestamp: "2026-03-04T10:02:12Z",
+              message: {
+                role: "user",
+                content: "<local-command-stdout>MCP server \"pencil\" disabled</local-command-stdout>",
               },
             },
           },
@@ -336,6 +386,44 @@ test("chat header does not show tool:* badges", async () => {
   app.cleanup();
 });
 
+test("command xml text is rendered as compact command line", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const sessionButton = window.document.querySelector('.entry-btn[data-entry-type="session"]');
+  assert.ok(sessionButton);
+  sessionButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const toolToggle = window.document.querySelector("#hide-tool-events-toggle");
+  assert.ok(toolToggle);
+  toolToggle.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const assistantTexts = [...window.document.querySelectorAll(".assist-text, .user-msg-text")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(
+    assistantTexts.some((text) => /command:\s*\/mcp\s+disable\s+pencil/i.test(text)),
+    true,
+  );
+  const toolTitles = [...window.document.querySelectorAll(".assistant-tool-title")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(toolTitles.some((text) => /command:\s*\/mcp\s+disable\s+pencil/i.test(text)), false);
+  const toolLines = [...window.document.querySelectorAll(".assistant-tool-line")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(toolLines.some((text) => /(回傳結果|Result):\s*MCP server \"pencil\" disabled/i.test(text)), true);
+
+  app.cleanup();
+});
+
 test("toolUseResult commandName is parsed and rendered in tool result panel", async () => {
   const app = await setupApp();
   const { window } = app;
@@ -350,15 +438,80 @@ test("toolUseResult commandName is parsed and rendered in tool result panel", as
   sessionButton.click();
   await new Promise((resolve) => setTimeout(resolve, 30));
 
-  const toggle = window.document.querySelector("#hide-system-events-toggle");
-  assert.ok(toggle);
-  toggle.click();
+  const toolToggle = window.document.querySelector("#hide-tool-events-toggle");
+  assert.ok(toolToggle);
+  toolToggle.click();
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   const toolResultLines = [...window.document.querySelectorAll(".assistant-tool-line")]
     .map((node) => (node.textContent || "").trim())
     .filter(Boolean);
   assert.equal(toolResultLines.some((text) => /stdout:\s*done/i.test(text)), true);
+
+  app.cleanup();
+});
+
+test("event toggles independently control tool/thinking while system events are hidden", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const sessionButton = window.document.querySelector('.entry-btn[data-entry-type="session"]');
+  assert.ok(sessionButton);
+  sessionButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const systemToggle = window.document.querySelector("#hide-system-events-toggle");
+  const toolToggle = window.document.querySelector("#hide-tool-events-toggle");
+  const thinkingToggle = window.document.querySelector("#hide-thinking-events-toggle");
+  assert.ok(systemToggle);
+  assert.ok(toolToggle);
+  assert.ok(thinkingToggle);
+  assert.equal(systemToggle.getAttribute("aria-pressed"), "true");
+  assert.equal(toolToggle.getAttribute("aria-pressed"), "true");
+  assert.equal(thinkingToggle.getAttribute("aria-pressed"), "true");
+
+  let toolResultLines = [...window.document.querySelectorAll(".assistant-tool-line")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(toolResultLines.some((text) => /stdout:\s*done/i.test(text)), false);
+  assert.equal(window.document.querySelectorAll(".assistant-thinking-text").length, 0);
+  let assistantTexts = [...window.document.querySelectorAll(".assist-text")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(assistantTexts.includes("meta note"), false);
+
+  toolToggle.click();
+  thinkingToggle.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  toolResultLines = [...window.document.querySelectorAll(".assistant-tool-line")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(toolResultLines.some((text) => /stdout:\s*done/i.test(text)), true);
+  assert.equal(window.document.querySelectorAll(".assistant-thinking-text").length > 0, true);
+  assistantTexts = [...window.document.querySelectorAll(".assist-text")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(assistantTexts.includes("meta note"), true);
+
+  toolToggle.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  toolResultLines = [...window.document.querySelectorAll(".assistant-tool-line")]
+    .map((node) => (node.textContent || "").trim())
+    .filter(Boolean);
+  assert.equal(toolResultLines.some((text) => /stdout:\s*done/i.test(text)), false);
+  assert.equal(
+    toolResultLines.some((text) => /(回傳結果|Result):\s*MCP server \"pencil\" disabled/i.test(text)),
+    true,
+  );
+
+  thinkingToggle.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(window.document.querySelectorAll(".assistant-thinking-text").length, 0);
 
   app.cleanup();
 });

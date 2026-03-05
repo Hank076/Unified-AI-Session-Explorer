@@ -29,7 +29,9 @@ const state = {
   timelineItems: [],
   parseErrors: [],
   parseErrorCode: "",
-  hideSystemEvents: false,
+  hideSystemEvents: true,
+  hideToolEvents: true,
+  hideThinkingEvents: true,
   timelineSearchQuery: "",
   techViewState: {},
   entryExpandState: {},
@@ -60,6 +62,8 @@ const refs = {
   viewerContent: null,
   status: null,
   hideSystemEventsToggle: null,
+  hideToolEventsToggle: null,
+  hideThinkingEventsToggle: null,
   hideSystemEventsWrap: null,
   pathTooltip: null,
   themeButtons: [],
@@ -406,19 +410,31 @@ function bindPathHover(element, text, options = {}) {
 }
 
 function setHideSystemEventsVisible(visible) {
-  if (!refs.hideSystemEventsWrap || !refs.hideSystemEventsToggle) return;
+  if (
+    !refs.hideSystemEventsWrap ||
+    !refs.hideSystemEventsToggle ||
+    !refs.hideToolEventsToggle ||
+    !refs.hideThinkingEventsToggle
+  ) {
+    return;
+  }
   refs.hideSystemEventsWrap.style.visibility = visible ? "visible" : "hidden";
   refs.hideSystemEventsWrap.style.pointerEvents = visible ? "auto" : "none";
   refs.hideSystemEventsToggle.disabled = !visible;
+  refs.hideToolEventsToggle.disabled = !visible;
+  refs.hideThinkingEventsToggle.disabled = !visible;
   refs.hideSystemEventsWrap.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
-function updateHideSystemEventsToggle() {
-  if (!refs.hideSystemEventsToggle) return;
-  refs.hideSystemEventsToggle.setAttribute(
-    "aria-pressed",
-    state.hideSystemEvents ? "true" : "false",
-  );
+function updateTogglePressed(button, active) {
+  if (!button) return;
+  button.setAttribute("aria-pressed", active ? "true" : "false");
+}
+
+function updateEventFilterToggles() {
+  updateTogglePressed(refs.hideSystemEventsToggle, state.hideSystemEvents);
+  updateTogglePressed(refs.hideToolEventsToggle, state.hideToolEvents);
+  updateTogglePressed(refs.hideThinkingEventsToggle, state.hideThinkingEvents);
 }
 
 function setViewerSearchVisible(visible) {
@@ -1148,10 +1164,51 @@ function truncateText(text, limit = 380) {
 function extractCommandDisplay(text) {
   const source = String(text || "");
   const commandName = source.match(/<command-name>([\s\S]*?)<\/command-name>/i)?.[1]?.trim();
+  const commandMessage = source.match(/<command-message>([\s\S]*?)<\/command-message>/i)?.[1]?.trim();
   const commandArgs = source.match(/<command-args>([\s\S]*?)<\/command-args>/i)?.[1]?.trim();
-  const parts = [commandName, commandArgs].filter(Boolean);
+  const normalizedName = commandName || (commandMessage ? `/${commandMessage.replace(/^\/+/, "")}` : "");
+  const parts = [normalizedName, commandArgs].filter(Boolean);
   if (parts.length === 0) return null;
-  return parts.join(" ");
+  return `command: ${parts.join(" ")}`;
+}
+
+function extractXmlTagContent(source, tagName) {
+  const text = String(source || "");
+  if (!text.trim()) return "";
+  const matcher = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i");
+  const value = text.match(matcher)?.[1];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function extractLocalCommandStdout(raw) {
+  if (!raw || typeof raw !== "object") return "";
+  const candidates = [
+    raw["local-command-stdout"],
+    raw.localCommandStdout,
+    raw?.message?.["local-command-stdout"],
+    raw?.message?.localCommandStdout,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  const messageContent = raw?.message?.content;
+  if (typeof messageContent === "string") {
+    const tagged = extractXmlTagContent(messageContent, "local-command-stdout");
+    if (tagged) return tagged;
+  }
+  if (typeof raw?.content === "string") {
+    const tagged = extractXmlTagContent(raw.content, "local-command-stdout");
+    if (tagged) return tagged;
+  }
+  for (const item of normalizeContentItems(messageContent)) {
+    if (!item || typeof item !== "object") continue;
+    const text = typeof item.text === "string" ? item.text : typeof item.content === "string" ? item.content : "";
+    const tagged = extractXmlTagContent(text, "local-command-stdout");
+    if (tagged) return tagged;
+  }
+  return "";
 }
 
 function extractTextFromUnknown(value) {
@@ -1761,7 +1818,9 @@ function extractChatOnlySummary(raw) {
     }
   }
 
-  return chunks.join("\n").trim();
+  const summary = chunks.join("\n").trim();
+  const commandDisplay = extractCommandDisplay(summary);
+  return commandDisplay || summary;
 }
 
 function extractToolTagNames(tags) {
@@ -1857,8 +1916,16 @@ function extractTextSummary(raw, resultsMap = null) {
   }
 
   const summary = textChunks.join("\n").trim();
+  const localCommandStdout = extractLocalCommandStdout(raw);
   if (summary) {
     const commandDisplay = extractCommandDisplay(summary);
+    if (commandDisplay && localCommandStdout) {
+      pushUniqueDetail(toolUseDetails, {
+        title: "",
+        kind: "command_stdout",
+        lines: [tt("command.stdout", { text: localCommandStdout })],
+      });
+    }
     return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
   }
 
@@ -1981,8 +2048,9 @@ function normalizeEvents(events) {
   const normalized = [];
   const toolResultsMap = new Map();
   const consumedResultIds = new Set();
+  const localCommandStdoutMap = new Map();
 
-  // 第一階段：預掃描所有 tool_result
+  // 第一階段：預掃描所有 tool_result 與 local-command-stdout 關聯
   for (const event of events) {
     const raw = event.raw || {};
     const contentItems = normalizeContentItems(raw.message?.content || raw.content);
@@ -1995,6 +2063,19 @@ function normalizeEvents(events) {
     if (raw.type === "tool_result" && raw.tool_use_id) {
       toolResultsMap.set(raw.tool_use_id, raw);
     }
+
+    const parentUuid = String(
+      event.parentUuid || raw.parentUuid || event.logicalParentUuid || raw.logicalParentUuid || "",
+    ).trim();
+    const localCommandStdout = extractLocalCommandStdout(raw);
+    if (parentUuid && localCommandStdout) {
+      const existing = localCommandStdoutMap.get(parentUuid);
+      if (existing) {
+        localCommandStdoutMap.set(parentUuid, `${existing}\n${localCommandStdout}`);
+      } else {
+        localCommandStdoutMap.set(parentUuid, localCommandStdout);
+      }
+    }
   }
 
   // 第二階段：正規化事件
@@ -2003,6 +2084,15 @@ function normalizeEvents(events) {
     const rawType = raw.type || event.eventType || "unknown";
     const role = raw.message?.role;
     const contentItems = normalizeContentItems(raw.message?.content || raw.content);
+    const parentUuid = String(
+      event.parentUuid || raw.parentUuid || event.logicalParentUuid || raw.logicalParentUuid || "",
+    ).trim();
+    const localCommandStdout = extractLocalCommandStdout(raw);
+    const commandDisplayFromRaw = extractCommandDisplay(extractChatOnlySummary(raw));
+    if (parentUuid && localCommandStdout && !commandDisplayFromRaw) {
+      // 純 stdout 事件已合併到 parentUuid 對應的 command 卡片，不重複顯示
+      continue;
+    }
     
     // 檢查此事件是否僅包含已「消費」的工具結果
     const onlyConsumedResults = contentItems.length > 0 && contentItems.every(item => 
@@ -2025,6 +2115,18 @@ function normalizeEvents(events) {
 
     if (roleType === "user" || roleType === "assistant") {
       const text = extractTextSummary(raw, toolResultsMap);
+      const eventUuid = String(event.uuid || raw.uuid || "").trim();
+      const correlatedLocalStdout = eventUuid ? localCommandStdoutMap.get(eventUuid) : "";
+      if (correlatedLocalStdout) {
+        const commandDisplay = extractCommandDisplay(text.summary) || text.summary;
+        if (commandDisplay) {
+          pushUniqueDetail(text.toolUseDetails, {
+            title: "",
+            kind: "command_stdout",
+            lines: [tt("command.stdout", { text: correlatedLocalStdout })],
+          });
+        }
+      }
       normalized.push({
         kind: roleType === "user" ? "chat_user" : "chat_assistant",
         line: event.line,
@@ -2177,10 +2279,9 @@ function renderChatItem(item) {
   const bubble = createElement("section", msgClass);
   const header = createElement("header", "msg-header");
   const tags = Array.isArray(item.tags) ? item.tags : [];
-  const visibleTags = (state.hideSystemEvents
-    ? tags.filter((tag) => tag !== "thinking" && tag !== "tool_result")
-    : tags
-  ).filter((tag) => !(typeof tag === "string" && tag.startsWith("tool:")));
+  const visibleTags = tags
+    .filter((tag) => tag !== "thinking" && tag !== "tool_result")
+    .filter((tag) => !(typeof tag === "string" && tag.startsWith("tool:")));
   const roleClass = item.kind === "chat_user" ? "user-role" : "assist-role";
   const timeClass = item.kind === "chat_user" ? "user-time" : "assist-time";
   const tagClass = item.kind === "chat_user" ? "user-tag" : "assist-tag";
@@ -2198,7 +2299,7 @@ function renderChatItem(item) {
 
   const fullText = String(
     state.hideSystemEvents
-      ? item.conversationSummary || item.conversationToolSummary || ""
+      ? item.conversationSummary || (state.hideToolEvents ? "" : item.conversationToolSummary || "")
       : item.summary || "",
   );
   const isLong = fullText.length > CHAT_PREVIEW_LENGTH;
@@ -2239,12 +2340,12 @@ function renderChatItem(item) {
   }
 
   if (
-    !state.hideSystemEvents &&
+    !state.hideThinkingEvents &&
     item.kind === "chat_assistant" &&
     Array.isArray(item.thinkingDetails) &&
     item.thinkingDetails.length > 0
   ) {
-    const thinkingBox = createElement("details", "assistant-fold");
+    const thinkingBox = createElement("details", "assistant-fold assistant-fold--thinking");
     thinkingBox.append(
       createElement("summary", "assistant-fold-summary", tt("section.thinking", { count: item.thinkingDetails.length })),
     );
@@ -2257,14 +2358,21 @@ function renderChatItem(item) {
   }
 
   if (
-    item.kind === "chat_assistant" &&
+    (item.kind === "chat_assistant" || item.kind === "chat_user") &&
     Array.isArray(item.toolUseDetails) &&
     item.toolUseDetails.length > 0
   ) {
-    for (const detail of item.toolUseDetails.slice(0, 4)) {
+    const visibleToolUseDetails = state.hideToolEvents
+      ? item.toolUseDetails.filter((detail) =>
+          detail?.kind === "command_stdout",
+        )
+      : item.toolUseDetails;
+    for (const detail of visibleToolUseDetails.slice(0, 4)) {
       const cardClass = "assistant-tool-card assistant-tool-card--direct";
       const card = createElement("div", cardClass);
-      card.append(createElement("div", "assistant-tool-title", detail.title));
+      if (String(detail?.title || "").trim()) {
+        card.append(createElement("div", "assistant-tool-title", detail.title));
+      }
       for (const line of detail.lines.slice(0, 5)) {
         card.append(createElement("div", "assistant-tool-line", line));
       }
@@ -2273,7 +2381,7 @@ function renderChatItem(item) {
   }
 
   if (
-    !state.hideSystemEvents &&
+    !state.hideToolEvents &&
     Array.isArray(item.toolResultDetails) &&
     item.toolResultDetails.length > 0
   ) {
@@ -2415,8 +2523,24 @@ function renderTimelineView() {
     }
 
     if (item.kind.startsWith("chat")) {
+      const isMetaChatItem =
+        item?.raw?.isMeta === true || item?.raw?.message?.isMeta === true;
+      if (state.hideThinkingEvents && isMetaChatItem) {
+        continue;
+      }
       if (state.hideSystemEvents && item.kind === "chat_assistant") {
-        if (!String(item.conversationSummary || item.conversationToolSummary || "").trim()) {
+        const summaryText = String(
+          item.conversationSummary || (state.hideToolEvents ? "" : item.conversationToolSummary || ""),
+        ).trim();
+        const hasVisibleToolDetails =
+          !state.hideToolEvents &&
+          ((Array.isArray(item.toolUseDetails) && item.toolUseDetails.length > 0) ||
+            (Array.isArray(item.toolResultDetails) && item.toolResultDetails.length > 0));
+        const hasVisibleThinkingDetails =
+          !state.hideThinkingEvents &&
+          Array.isArray(item.thinkingDetails) &&
+          item.thinkingDetails.length > 0;
+        if (!summaryText && !hasVisibleToolDetails && !hasVisibleThinkingDetails) {
           continue;
         }
       }
@@ -2639,7 +2763,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.viewerContent = document.querySelector("#viewer-content");
   refs.status = document.querySelector("#status");
   refs.hideSystemEventsToggle = document.querySelector("#hide-system-events-toggle");
-  refs.hideSystemEventsWrap = document.querySelector(".hide-system-events-toggle");
+  refs.hideToolEventsToggle = document.querySelector("#hide-tool-events-toggle");
+  refs.hideThinkingEventsToggle = document.querySelector("#hide-thinking-events-toggle");
+  refs.hideSystemEventsWrap = document.querySelector("#viewer-event-toggle-group");
   refs.pathTooltip = document.querySelector("#path-tooltip");
   refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
   refs.localeSelect = document.querySelector("#locale-select");
@@ -2722,10 +2848,22 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   hideUndoToast();
   state.hideSystemEvents = true;
-  updateHideSystemEventsToggle();
+  state.hideToolEvents = true;
+  state.hideThinkingEvents = true;
+  updateEventFilterToggles();
   refs.hideSystemEventsToggle.addEventListener("click", () => {
     state.hideSystemEvents = !state.hideSystemEvents;
-    updateHideSystemEventsToggle();
+    updateEventFilterToggles();
+    renderTimelineView();
+  });
+  refs.hideToolEventsToggle?.addEventListener("click", () => {
+    state.hideToolEvents = !state.hideToolEvents;
+    updateEventFilterToggles();
+    renderTimelineView();
+  });
+  refs.hideThinkingEventsToggle?.addEventListener("click", () => {
+    state.hideThinkingEvents = !state.hideThinkingEvents;
+    updateEventFilterToggles();
     renderTimelineView();
   });
   initLocaleSelector();

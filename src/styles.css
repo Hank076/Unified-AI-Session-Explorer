@@ -482,6 +482,13 @@ body {
   gap: 8px;
 }
 
+.viewer-event-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .hide-system-events-toggle {
   display: inline-flex;
   align-items: center;
@@ -498,6 +505,12 @@ body {
 
 .hide-system-events-toggle:hover {
   background: var(--control-bg-hover);
+}
+
+.hide-system-events-toggle[aria-pressed="true"] {
+  border-color: var(--control-border-active);
+  background: color-mix(in oklab, var(--accent) 12%, var(--control-bg));
+  color: var(--accent);
 }
 
 .hide-system-events-icon {
@@ -1407,8 +1420,15 @@ details summary:focus-visible,
   padding: 0 6px;
 }
 
-.assistant-thinking,
 .assistant-tools {
+  margin-top: 10px;
+  border: var(--control-border-width) solid var(--assistant-border);
+  border-radius: 8px;
+  background: var(--assistant-bg);
+  padding: 8px;
+}
+
+.assistant-thinking {
   margin-top: 10px;
   border: var(--control-border-width) solid var(--assistant-border);
   border-radius: 8px;
@@ -1430,6 +1450,16 @@ details summary:focus-visible,
   font-size: 12px;
 }
 
+.assistant-fold--thinking {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.assistant-fold--thinking .assistant-fold-summary {
+  color: inherit;
+}
+
 .assistant-subtitle {
   margin: 0 0 6px;
   font-size: 12px;
@@ -1438,6 +1468,7 @@ details summary:focus-visible,
 
 .assistant-thinking-text {
   margin: 0;
+  font-size: 13px;
   white-space: pre-wrap;
   color: var(--control-text);
   line-height: 1.4;
@@ -1469,7 +1500,7 @@ details summary:focus-visible,
 }
 
 .assistant-tool-line {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--control-text);
   line-height: 1.35;
   white-space: pre-wrap;
@@ -1498,6 +1529,7 @@ details summary:focus-visible,
 
 .tech-summary {
   margin-top: 4px;
+  font-size: 13px;
   color: var(--control-text);
 }
 
