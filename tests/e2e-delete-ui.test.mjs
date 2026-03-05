@@ -584,3 +584,80 @@ test("subagent toggle button has clear state and purpose", async () => {
 
   app.cleanup();
 });
+
+test("project context menu shows open folder and delete options", async () => {
+  const app = await setupApp();
+  const { window, openedPaths } = app;
+
+  const projectRow = window.document.querySelector(".project-btn")?.closest(".list-row");
+  assert.ok(projectRow, "project row should exist");
+  projectRow.dispatchEvent(
+    new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const items = window.document.querySelectorAll(".ctx-menu-item");
+  assert.equal(items.length, 2, "project context menu should have 2 items");
+  assert.match(items[0].textContent, /Open folder|開啟資料夾/i);
+  assert.match(items[1].textContent, /Delete|刪除/i);
+
+  // 點擊開啟資料夾
+  items[0].click();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(openedPaths.length, 1, "opener.openPath should be called once");
+  assert.match(openedPaths[0], /demo-project/i);
+
+  // 選單應已關閉
+  assert.equal(window.document.querySelector("#ctx-menu").hidden, true, "menu should be hidden after click");
+
+  app.cleanup();
+});
+
+test("session context menu shows copy session id and delete options", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  // 先選取專案，讓 entries 出現
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton, "project button should exist");
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const entryRow = window.document.querySelector(".entry-row.list-row");
+  assert.ok(entryRow, "entry row should exist");
+  entryRow.dispatchEvent(
+    new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const items = window.document.querySelectorAll(".ctx-menu-item");
+  assert.equal(items.length, 2, "session context menu should have 2 items");
+  assert.match(items[0].textContent, /Copy Session ID|複製 Session ID/i);
+  assert.match(items[1].textContent, /Delete|刪除/i);
+
+  app.cleanup();
+});
+
+test("context menu closes on Escape key", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  const projectRow = window.document.querySelector(".project-btn")?.closest(".list-row");
+  assert.ok(projectRow, "project row should exist");
+  projectRow.dispatchEvent(
+    new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const menu = window.document.querySelector("#ctx-menu");
+  assert.equal(menu.hidden, false, "menu should be visible after contextmenu event");
+
+  window.document.dispatchEvent(
+    new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(menu.hidden, true, "menu should be hidden after Escape");
+
+  app.cleanup();
+});
