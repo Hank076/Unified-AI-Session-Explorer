@@ -598,12 +598,16 @@ async function refreshEntriesForSelectedProject() {
   renderEntries();
 }
 
-function clearSelectedEntryIfMatchesPaths(paths) {
-  if (!state.selectedEntryPath) return;
-  if (!paths.includes(state.selectedEntryPath)) return;
+function clearSelectedEntryState() {
   state.selectedEntryPath = "";
   state.selectedEntryType = "";
   clearViewer();
+}
+
+function clearSelectedEntryIfMatchesPaths(paths) {
+  if (!state.selectedEntryPath) return;
+  if (!paths.includes(state.selectedEntryPath)) return;
+  clearSelectedEntryState();
 }
 
 function openSessionDeleteDialog(entry) {
@@ -838,11 +842,9 @@ async function executeProjectDelete(pending) {
     renderProjects();
     if (wasSelected) {
       state.selectedProjectPath = "";
-      state.selectedEntryPath = "";
-      state.selectedEntryType = "";
+      clearSelectedEntryState();
       state.entries = [];
       renderEntries();
-      clearViewer();
     }
     setStatus(tt("status.projectDeleted"), "info");
   } catch (errorCode) {
@@ -2808,9 +2810,7 @@ async function loadProjects() {
 
 async function selectProject(projectPath) {
   state.selectedProjectPath = projectPath;
-  state.selectedEntryPath = "";
-  state.selectedEntryType = "";
-  clearViewer();
+  clearSelectedEntryState();
   renderProjects();
   setStatus(tt("status.loadingEntries"));
 
