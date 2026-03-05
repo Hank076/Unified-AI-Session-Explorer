@@ -227,6 +227,12 @@ fn build_entry(entry_type: &str, path: &Path, label: String, parent_session: Opt
     }
 }
 
+fn file_name_or(path: &Path, fallback: &str) -> String {
+    path.file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
 #[tauri::command]
 pub fn list_projects(base_path: Option<String>) -> Result<Vec<Project>, String> {
     let root = resolve_root_path(base_path.as_deref())?;
@@ -281,10 +287,7 @@ pub fn list_project_entries(
         });
 
         for memory_file in memory_files {
-            let label = memory_file
-                .file_name()
-                .map(|v| v.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unknown".to_string());
+            let label = file_name_or(&memory_file, "unknown");
             entries.push(build_entry("memory_file", &memory_file, label, None));
         }
     }
@@ -305,10 +308,7 @@ pub fn list_project_entries(
             .file_stem()
             .map(|v| v.to_string_lossy().to_string())
             .unwrap_or_default();
-        let session_label = session
-            .file_name()
-            .map(|v| v.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unknown.jsonl".to_string());
+        let session_label = file_name_or(&session, "unknown.jsonl");
 
         entries.push(build_entry("session", &session, session_label, None));
 
@@ -329,10 +329,7 @@ pub fn list_project_entries(
         });
 
         for subagent_file in subagent_files {
-            let label = subagent_file
-                .file_name()
-                .map(|v| v.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unknown.jsonl".to_string());
+            let label = file_name_or(&subagent_file, "unknown.jsonl");
             entries.push(build_entry(
                 "subagent_session",
                 &subagent_file,
