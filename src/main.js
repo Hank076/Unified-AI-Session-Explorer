@@ -988,18 +988,7 @@ function renderProjects() {
     button.addEventListener("click", () => selectProject(project.path));
     const row = createElement("div", "list-row");
     row.append(button);
-    row.append(
-      createActionWrap(
-        createIconActionButton({
-          ariaLabel: tt("aria.deleteProject", { name: displayName }),
-          onClick: () => {
-            void openProjectDeleteDialog(project);
-          },
-          kind: "danger",
-          icon: createTrashIcon(),
-        }),
-      ),
-    );
+    row.addEventListener("contextmenu", (e) => openProjectContextMenu(e, project));
     li.appendChild(row);
     refs.projectsList.appendChild(li);
   }
