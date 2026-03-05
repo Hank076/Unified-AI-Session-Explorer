@@ -8,7 +8,7 @@
   --bg-app: radial-gradient(ellipse 80% 60% at 20% 10%, #0d1109 0%, #090d08 100%);
   --text-primary: #e8f0e4;
   --text-secondary: #8fa888;
-  --text-muted: #5c6e56;
+  --text-muted: #7a9070;
   --panel-bg: rgba(19, 24, 16, 0.88);
   --panel-border: #1e2a1a;
   --panel-border-width: 1px;
@@ -35,12 +35,12 @@
   --theme-btn-active-text: #ccff00;
   --project-search-bg: #0c100a;
   --project-search-border: #1e2a1a;
-  --project-search-icon: #5c6e56;
+  --project-search-icon: #7a9070;
   --viewer-search-bg: #0c100a;
   --viewer-search-border: #1e2a1a;
-  --viewer-search-icon: #6b7a64;
+  --viewer-search-icon: #7a9070;
   --viewer-meta-path: #ccff00;
-  --viewer-meta-time: #5c6e56;
+  --viewer-meta-time: #7a9070;
   --viewer-meta-border: #1e2a1a;
   --viewer-meta-bg: #0c100a;
   --viewer-meta-icon: #ccff00;
@@ -87,8 +87,9 @@
   --toast-border: #243a1e;
   --toast-text: #d0e8c8;
   --interactive-transition: 180ms ease;
-  --ctx-menu-hover-bg: rgba(204, 255, 0, 0.10);
-  --ctx-menu-hover-shadow: inset 2px 0 0 #ccff00;
+  /* context menu */
+  --context-menu-hover-bg: rgba(204, 255, 0, 0.10);
+  --context-menu-hover-shadow: inset 2px 0 0 #ccff00;
   font-family: var(--font-main);
   color: var(--text-primary);
   background: var(--bg-app);
