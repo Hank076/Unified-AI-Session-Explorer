@@ -759,7 +759,6 @@ html:lang(zh-Hant) {
 .ctx-menu-item:hover,
 .ctx-menu-item:focus-visible {
   background: var(--control-bg-hover);
-  outline: none;
 }
 
 .ctx-menu-item:focus-visible {
