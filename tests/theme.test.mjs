@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildThemeDatasetValue,
   getStoredThemeMode,
@@ -38,4 +39,27 @@ test("buildThemeDatasetValue maps only light and dark", () => {
   assert.equal(buildThemeDatasetValue("light"), "light");
   assert.equal(buildThemeDatasetValue("dark"), "dark");
   assert.equal(buildThemeDatasetValue("unknown"), "dark");
+});
+
+test("light theme does not override layout-affecting variables", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const match = css.match(/html\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/);
+  assert.ok(match, "light theme block should exist");
+  const lightBlock = match[1];
+
+  const layoutVariables = [
+    "--font-title:",
+    "--font-ui:",
+    "--panel-border-width:",
+    "--control-border-width:",
+    "--header-height:",
+  ];
+
+  for (const variable of layoutVariables) {
+    assert.equal(
+      lightBlock.includes(variable),
+      false,
+      `light theme should not override ${variable}`,
+    );
+  }
 });

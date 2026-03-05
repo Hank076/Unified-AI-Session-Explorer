@@ -96,15 +96,12 @@
 }
 
 html[data-theme="light"] {
-  --font-title: "Inter", "Segoe UI", sans-serif;
-  --font-ui: "Inter", "Segoe UI", sans-serif;
   --bg-app: #f5f5f7;
   --text-primary: #1e2732;
   --text-secondary: #4b5967;
   --text-muted: #677484;
   --panel-bg: #ffffff;
   --panel-border: #e4e4e7;
-  --panel-border-width: 1.5px;
   --panel-title: #3f556c;
   --panel-shadow: 0 8px 20px rgba(47, 70, 90, 0.12);
   --panel-head-border: #d8dfe7;
@@ -113,7 +110,6 @@ html[data-theme="light"] {
   --control-bg-hover: #f4f7fb;
   --control-bg-active: #eff6ff;
   --control-border: #e4e4e7;
-  --control-border-width: 1.5px;
   --control-border-active: #2563eb;
   --control-text: #1f2d3b;
   --entry-subagent-border: #2563eb;
@@ -124,7 +120,6 @@ html[data-theme="light"] {
   --brand-sub: #71717a;
   --header-bg: #ffffff;
   --header-border: #e4e4e7;
-  --header-height: 56px;
   --theme-btn-active-text: #18181b;
   --project-search-bg: #fafafa;
   --project-search-border: #e4e4e7;
