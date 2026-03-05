@@ -264,22 +264,35 @@ async function setupApp() {
   }
 
   const mock = createMockInvoke();
-  window.__TAURI__ = { core: { invoke: mock.invoke } };
+  const openedPaths = [];
+  window.__TAURI__ = {
+    core: { invoke: mock.invoke },
+    opener: {
+      openPath: async (p) => { openedPaths.push(p); },
+    },
+  };
 
   await import(`../src/main.js?e2e=${Date.now()}-${Math.random()}`);
   window.dispatchEvent(new window.Event("DOMContentLoaded"));
   await new Promise((resolve) => setTimeout(resolve, 30));
 
-  return { window, mock, cleanup: () => dom.window.close() };
+  return { window, mock, openedPaths, cleanup: () => dom.window.close() };
 }
 
 test("project delete dialog shows impact and confirms by exact name", async () => {
   const app = await setupApp();
   const { window, mock } = app;
 
-  const projectDeleteBtn = window.document.querySelector('[aria-label^="Delete project"]');
-  assert.ok(projectDeleteBtn);
-  projectDeleteBtn.click();
+  const projectRow = window.document.querySelector(".project-btn")?.closest(".list-row");
+  assert.ok(projectRow, "project row should exist");
+  projectRow.dispatchEvent(
+    new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const deleteMenuItem = [...window.document.querySelectorAll(".ctx-menu-item")]
+    .find((el) => /delete|刪除/i.test(el.textContent));
+  assert.ok(deleteMenuItem, "context menu should have a delete item");
+  deleteMenuItem.click();
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   const dialog = window.document.querySelector("#project-delete-dialog");
@@ -313,9 +326,16 @@ test("session delete requires confirmation modal and supports undo", async () =>
   projectButton.click();
   await new Promise((resolve) => setTimeout(resolve, 20));
 
-  const deleteBtn = window.document.querySelector('[aria-label^="Delete conversation"]');
-  assert.ok(deleteBtn);
-  deleteBtn.click();
+  const entryRow = window.document.querySelector(".entry-row.list-row");
+  assert.ok(entryRow, "entry row should exist");
+  entryRow.dispatchEvent(
+    new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const deleteMenuItem = [...window.document.querySelectorAll(".ctx-menu-item")]
+    .find((el) => /delete|刪除/i.test(el.textContent));
+  assert.ok(deleteMenuItem, "context menu should have a delete item");
+  deleteMenuItem.click();
 
   const sessionDialog = window.document.querySelector("#session-delete-dialog");
   assert.equal(sessionDialog.open, true);
