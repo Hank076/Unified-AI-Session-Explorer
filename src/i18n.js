@@ -240,7 +240,7 @@ const MESSAGES = {
     "action.undo": "Undo",
     "action.cancel": "Cancel",
     "action.confirmDelete": "Delete forever",
-    "action.openFolder": "Open Folder",
+    "action.openFolder": "Open folder",
     "action.copySessionId": "Copy Session ID",
     "status.sessionIdCopied": "Session ID copied",
     "aria.deleteProject": "Delete project {name}",
