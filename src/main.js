@@ -2698,8 +2698,19 @@ function bindDialogSubmit(form) {
   });
 }
 
+function bindClick(element, handler) {
+  element?.addEventListener("click", handler);
+}
+
+function bindInputText(input, onChange) {
+  if (!input) return;
+  input.addEventListener("input", (event) => {
+    onChange(String(event.target.value || ""));
+  });
+}
+
 function bindTimelineFilterToggle(button, stateKey) {
-  button?.addEventListener("click", () => {
+  bindClick(button, () => {
     state[stateKey] = !state[stateKey];
     updateEventFilterToggles();
     renderTimelineView();
@@ -2837,46 +2848,42 @@ window.addEventListener("DOMContentLoaded", async () => {
   initDomRefs();
 
   for (const button of refs.themeButtons) {
-    button.addEventListener("click", () => {
+    bindClick(button, () => {
       setThemeMode(button.dataset.themeMode, { persist: true });
     });
   }
 
-  if (refs.projectsSearchInput) {
-    refs.projectsSearchInput.addEventListener("input", (event) => {
-      state.projectSearchQuery = String(event.target.value || "");
-      renderProjects();
-    });
-  }
-  if (refs.viewerSearchInput) {
-    refs.viewerSearchInput.addEventListener("input", (event) => {
-      state.timelineSearchQuery = String(event.target.value || "");
-      renderTimelineView();
-    });
-  }
-  refs.projectDeleteCancelButton?.addEventListener("click", () => {
+  bindInputText(refs.projectsSearchInput, (value) => {
+    state.projectSearchQuery = value;
+    renderProjects();
+  });
+  bindInputText(refs.viewerSearchInput, (value) => {
+    state.timelineSearchQuery = value;
+    renderTimelineView();
+  });
+  bindClick(refs.projectDeleteCancelButton, () => {
     closeProjectDeleteDialog();
   });
   refs.projectDeleteInput?.addEventListener("input", () => {
     updateProjectDeleteConfirmState();
   });
-  refs.projectDeleteConfirmButton?.addEventListener("click", async () => {
+  bindClick(refs.projectDeleteConfirmButton, async () => {
     await confirmProjectDelete();
   });
   bindDialogCancel(refs.projectDeleteDialog, closeProjectDeleteDialog);
   bindDialogSubmit(refs.projectDeleteForm);
-  refs.sessionDeleteCancelButton?.addEventListener("click", () => {
+  bindClick(refs.sessionDeleteCancelButton, () => {
     closeSessionDeleteDialog();
   });
-  refs.sessionDeleteConfirmButton?.addEventListener("click", () => {
+  bindClick(refs.sessionDeleteConfirmButton, () => {
     confirmSessionDelete();
   });
   bindDialogCancel(refs.sessionDeleteDialog, closeSessionDeleteDialog);
   bindDialogSubmit(refs.sessionDeleteForm);
-  refs.aboutButton?.addEventListener("click", () => {
+  bindClick(refs.aboutButton, () => {
     openAboutDialog();
   });
-  refs.aboutCloseButton?.addEventListener("click", () => {
+  bindClick(refs.aboutCloseButton, () => {
     closeAboutDialog();
   });
   bindDialogCancel(refs.aboutDialog, closeAboutDialog);
