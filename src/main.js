@@ -1146,17 +1146,8 @@ function renderEntries() {
       });
     }
 
-    row.append(
-      createActionWrap(
-        toggle,
-        createIconActionButton({
-          ariaLabel: tt("aria.deleteConversation", { name: String(entry.label || "") }),
-          onClick: () => openSessionDeleteDialog(entry),
-          kind: "danger",
-          icon: createTrashIcon(),
-        }),
-      ),
-    );
+    if (toggle) row.append(createActionWrap(toggle));
+    row.addEventListener("contextmenu", (e) => openEntryContextMenu(e, entry));
     li.appendChild(row);
     refs.entriesList.appendChild(li);
 
@@ -1171,16 +1162,7 @@ function renderEntries() {
           isSubagent: true,
         }),
       );
-      childRow.append(
-        createActionWrap(
-          createIconActionButton({
-            ariaLabel: tt("aria.deleteConversation", { name: String(child.label || "") }),
-            onClick: () => openSessionDeleteDialog(child),
-            kind: "danger",
-            icon: createTrashIcon(),
-          }),
-        ),
-      );
+      childRow.addEventListener("contextmenu", (e) => openEntryContextMenu(e, child));
       childLi.appendChild(childRow);
       refs.entriesList.appendChild(childLi);
     }
