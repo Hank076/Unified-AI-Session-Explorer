@@ -575,53 +575,12 @@ function openEntryContextMenu(event, entry) {
   ]);
 }
 
-function createTrashIcon() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-  svg.classList.add("row-action-icon");
-
-  const addPath = (d) => {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", d);
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke", "currentColor");
-    path.setAttribute("stroke-width", "1.8");
-    path.setAttribute("stroke-linecap", "round");
-    path.setAttribute("stroke-linejoin", "round");
-    svg.appendChild(path);
-  };
-
-  addPath("M4 7h16");
-  addPath("M9.5 3.5h5");
-  addPath("M7.5 7l.7 11.2a1 1 0 0 0 1 .8h5.6a1 1 0 0 0 1-.8L16.5 7");
-  addPath("M10 10.5v5.5");
-  addPath("M14 10.5v5.5");
-  return svg;
-}
-
 function createActionWrap(...buttons) {
   const wrap = createElement("div", "row-actions");
   for (const button of buttons) {
     if (button) wrap.appendChild(button);
   }
   return wrap;
-}
-
-function createIconActionButton({ ariaLabel, onClick, title = "", kind = "danger", icon = null }) {
-  const button = document.createElement("button");
-  button.className = `row-action-btn row-action-btn--${kind}`;
-  button.type = "button";
-  button.title = title || ariaLabel;
-  button.setAttribute("aria-label", ariaLabel);
-  if (icon) button.appendChild(icon);
-  button.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onClick();
-  });
-  return button;
 }
 
 function showUndoToast(message, onUndo) {
