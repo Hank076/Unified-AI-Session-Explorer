@@ -117,6 +117,116 @@ pub struct ProjectDeleteImpact {
     pub total_size_bytes: u64,
 }
 
+#[derive(Debug, Default)]
+struct SessionMetadataAccumulator {
+    model_name: Option<String>,
+    total_input_tokens: u64,
+    total_output_tokens: u64,
+    total_cache_creation_input_tokens: u64,
+    total_cache_read_input_tokens: u64,
+    total_web_search_requests: u64,
+    total_web_fetch_requests: u64,
+    service_tier: Option<String>,
+    speed: Option<String>,
+    inference_geo: Option<String>,
+}
+
+impl SessionMetadataAccumulator {
+    fn observe_model_name(&mut self, value: &Value) {
+        if self.model_name.is_none() {
+            self.model_name = extract_string_paths(
+                value,
+                &[
+                    "message.model",
+                    "model",
+                    "model_name",
+                    "request.model",
+                    "request.message.model",
+                ],
+            );
+        }
+    }
+
+    fn add_usage_from_event(&mut self, value: &Value) {
+        let Some(usage) = value
+            .get("usage")
+            .or_else(|| value.get("message").and_then(|message| message.get("usage")))
+        else {
+            return;
+        };
+
+        self.total_input_tokens += usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        self.total_output_tokens += usage
+            .get("output_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        self.total_cache_creation_input_tokens += usage
+            .get("cache_creation_input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        self.total_cache_read_input_tokens += usage
+            .get("cache_read_input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        if let Some(server_tool_use) = usage.get("server_tool_use") {
+            self.total_web_search_requests += server_tool_use
+                .get("web_search_requests")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            self.total_web_fetch_requests += server_tool_use
+                .get("web_fetch_requests")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+        }
+
+        if self.service_tier.is_none() {
+            self.service_tier = usage
+                .get("service_tier")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+        if self.speed.is_none() {
+            self.speed = usage.get("speed").and_then(|v| v.as_str()).map(str::to_string);
+        }
+        if self.inference_geo.is_none() {
+            self.inference_geo = usage
+                .get("inference_geo")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+    }
+
+    fn build_metadata(self, start_time: Option<String>, end_time: Option<String>) -> SessionMetadata {
+        SessionMetadata {
+            model_name: self.model_name,
+            total_input_tokens: self.total_input_tokens,
+            total_output_tokens: self.total_output_tokens,
+            total_cache_creation_input_tokens: self.total_cache_creation_input_tokens,
+            total_cache_read_input_tokens: self.total_cache_read_input_tokens,
+            total_web_search_requests: self.total_web_search_requests,
+            total_web_fetch_requests: self.total_web_fetch_requests,
+            service_tier: self.service_tier,
+            speed: self.speed,
+            inference_geo: self.inference_geo,
+            start_time,
+            end_time,
+        }
+    }
+}
+
+fn build_entry(entry_type: &str, path: &Path, label: String, parent_session: Option<String>) -> Entry {
+    let (modified_ms, size_bytes) = get_file_metadata(path);
+    Entry {
+        entry_type: entry_type.to_string(),
+        label,
+        path: path.to_string_lossy().to_string(),
+        parent_session,
+        modified_ms,
+        size_bytes,
+    }
+}
+
 #[tauri::command]
 pub fn list_projects(base_path: Option<String>) -> Result<Vec<Project>, String> {
     let root = resolve_root_path(base_path.as_deref())?;
@@ -175,15 +285,7 @@ pub fn list_project_entries(
                 .file_name()
                 .map(|v| v.to_string_lossy().to_string())
                 .unwrap_or_else(|| "unknown".to_string());
-            let (modified_ms, size_bytes) = get_file_metadata(&memory_file);
-            entries.push(Entry {
-                entry_type: "memory_file".to_string(),
-                label,
-                path: memory_file.to_string_lossy().to_string(),
-                parent_session: None,
-                modified_ms,
-                size_bytes,
-            });
+            entries.push(build_entry("memory_file", &memory_file, label, None));
         }
     }
 
@@ -208,15 +310,7 @@ pub fn list_project_entries(
             .map(|v| v.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown.jsonl".to_string());
 
-        let (modified_ms, size_bytes) = get_file_metadata(&session);
-        entries.push(Entry {
-            entry_type: "session".to_string(),
-            label: session_label,
-            path: session.to_string_lossy().to_string(),
-            parent_session: None,
-            modified_ms,
-            size_bytes,
-        });
+        entries.push(build_entry("session", &session, session_label, None));
 
         let subagents_dir = project.join(&stem).join("subagents");
         if !subagents_dir.is_dir() {
@@ -239,15 +333,12 @@ pub fn list_project_entries(
                 .file_name()
                 .map(|v| v.to_string_lossy().to_string())
                 .unwrap_or_else(|| "unknown.jsonl".to_string());
-            let (modified_ms, size_bytes) = get_file_metadata(&subagent_file);
-            entries.push(Entry {
-                entry_type: "subagent_session".to_string(),
+            entries.push(build_entry(
+                "subagent_session",
+                &subagent_file,
                 label,
-                path: subagent_file.to_string_lossy().to_string(),
-                parent_session: Some(stem.clone()),
-                modified_ms,
-                size_bytes,
-            });
+                Some(stem.clone()),
+            ));
         }
     }
 
@@ -287,16 +378,7 @@ pub fn read_session_timeline(
     let mut events = Vec::new();
     let mut errors = Vec::new();
 
-    let mut model_name = None;
-    let mut total_input_tokens = 0;
-    let mut total_output_tokens = 0;
-    let mut total_cache_creation_input_tokens = 0;
-    let mut total_cache_read_input_tokens = 0;
-    let mut total_web_search_requests = 0;
-    let mut total_web_fetch_requests = 0;
-    let mut service_tier = None;
-    let mut speed = None;
-    let mut inference_geo = None;
+    let mut metadata_accumulator = SessionMetadataAccumulator::default();
 
     for (index, line) in content.lines().enumerate() {
         let line_number = index + 1;
@@ -306,63 +388,8 @@ pub fn read_session_timeline(
 
         match serde_json::from_str::<Value>(line) {
             Ok(value) => {
-                // 統計元數據
-                if model_name.is_none() {
-                    model_name = extract_string_paths(
-                        &value,
-                        &[
-                            "message.model",
-                            "model",
-                            "model_name",
-                            "request.model",
-                            "request.message.model",
-                        ],
-                    );
-                }
-                
-                if let Some(usage) = value
-                    .get("usage")
-                    .or_else(|| value.get("message").and_then(|m| m.get("usage")))
-                {
-                    total_input_tokens += usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                    total_output_tokens += usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                    total_cache_creation_input_tokens += usage
-                        .get("cache_creation_input_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    total_cache_read_input_tokens += usage
-                        .get("cache_read_input_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-
-                    if let Some(server_tool_use) = usage.get("server_tool_use") {
-                        total_web_search_requests += server_tool_use
-                            .get("web_search_requests")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        total_web_fetch_requests += server_tool_use
-                            .get("web_fetch_requests")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                    }
-
-                    if service_tier.is_none() {
-                        service_tier = usage
-                            .get("service_tier")
-                            .and_then(|v| v.as_str())
-                            .map(str::to_string);
-                    }
-                    if speed.is_none() {
-                        speed = usage.get("speed").and_then(|v| v.as_str()).map(str::to_string);
-                    }
-                    if inference_geo.is_none() {
-                        inference_geo = usage
-                            .get("inference_geo")
-                            .and_then(|v| v.as_str())
-                            .map(str::to_string);
-                    }
-                }
-
+                metadata_accumulator.observe_model_name(&value);
+                metadata_accumulator.add_usage_from_event(&value);
                 events.push(build_timeline_event(line_number, value));
             }
             Err(_) => errors.push(ParseError {
@@ -388,20 +415,7 @@ pub fn read_session_timeline(
         },
         errors,
         events,
-        metadata: SessionMetadata {
-            model_name,
-            total_input_tokens,
-            total_output_tokens,
-            total_cache_creation_input_tokens,
-            total_cache_read_input_tokens,
-            total_web_search_requests,
-            total_web_fetch_requests,
-            service_tier,
-            speed,
-            inference_geo,
-            start_time,
-            end_time,
-        },
+        metadata: metadata_accumulator.build_metadata(start_time, end_time),
     })
 }
 
