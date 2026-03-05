@@ -263,24 +263,40 @@ function getSystemPrefersDark() {
   }
 }
 
-function readThemeMode() {
+function safeStorageGet(key) {
   try {
-    return getStoredThemeMode(localStorage.getItem(THEME_STORAGE_KEY));
+    return localStorage.getItem(key);
   } catch {
-    return "auto";
+    return null;
   }
 }
 
-function saveThemeMode(mode) {
+function safeStorageSet(key, value) {
   try {
-    if (mode === "auto") {
-      localStorage.removeItem(THEME_STORAGE_KEY);
-    } else {
-      localStorage.setItem(THEME_STORAGE_KEY, mode);
-    }
+    localStorage.setItem(key, value);
   } catch {
     // Ignore storage errors and keep runtime-only setting.
   }
+}
+
+function safeStorageRemove(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage errors and keep runtime-only setting.
+  }
+}
+
+function readThemeMode() {
+  return getStoredThemeMode(safeStorageGet(THEME_STORAGE_KEY));
+}
+
+function saveThemeMode(mode) {
+  if (mode === "auto") {
+    safeStorageRemove(THEME_STORAGE_KEY);
+    return;
+  }
+  safeStorageSet(THEME_STORAGE_KEY, mode);
 }
 
 function updateThemeButtons() {
@@ -334,21 +350,13 @@ function initThemeMode() {
 }
 
 function readLocale() {
-  try {
-    const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
-    if (saved) return getStoredLocale(saved);
-  } catch {
-    // Ignore storage errors and use runtime locale.
-  }
+  const saved = safeStorageGet(LOCALE_STORAGE_KEY);
+  if (saved) return getStoredLocale(saved);
   return detectLocale(navigator.language);
 }
 
 function saveLocale(locale) {
-  try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  } catch {
-    // Ignore storage errors and keep runtime-only setting.
-  }
+  safeStorageSet(LOCALE_STORAGE_KEY, locale);
 }
 
 function setLocale(locale, { persist = true } = {}) {
