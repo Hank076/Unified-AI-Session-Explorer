@@ -28,7 +28,7 @@
   --divider: #27272a;
   --accent: #c4f82a;
   --accent-strong: #74d5ae;
-  --brand-sub: #c4f82a;
+  --brand-sub: #9ba8b8;
   --header-bg: rgba(22, 22, 30, 0.8);
   --header-border: rgba(46, 46, 56, 0.533);
   --header-height: 64px;
@@ -67,6 +67,7 @@
   --chat-user-bg: #1a2818;
   --chat-user-border: rgba(196, 248, 42, 0.267);
   --chat-user-text: var(--text-primary);
+  --chat-user-line: #b8c8e8;
   --chat-assistant-bg: #18181e;
   --chat-assistant-border: rgba(46, 46, 56, 0.533);
   --chip-bg: transparent;
@@ -99,7 +100,7 @@ html[data-theme="light"] {
   --bg-app: #f5f5f7;
   --text-primary: #1e2732;
   --text-secondary: #4b5967;
-  --text-muted: #677484;
+  --text-muted: #5e6b78;
   --panel-bg: #ffffff;
   --panel-border: #e4e4e7;
   --panel-title: #3f556c;
@@ -123,10 +124,10 @@ html[data-theme="light"] {
   --theme-btn-active-text: #18181b;
   --project-search-bg: #fafafa;
   --project-search-border: #e4e4e7;
-  --project-search-icon: #a1a1aa;
+  --project-search-icon: #76767f;
   --viewer-search-bg: #fafafa;
   --viewer-search-border: #e4e4e7;
-  --viewer-search-icon: #a1a1aa;
+  --viewer-search-icon: #76767f;
   --viewer-meta-path: #18181b;
   --viewer-meta-time: #71717a;
   --viewer-meta-border: #e4e4e7;
@@ -155,6 +156,7 @@ html[data-theme="light"] {
   --chat-user-bg: #2563eb;
   --chat-user-border: #2563eb;
   --chat-user-text: #ffffff;
+  --chat-user-line: #f0f5ff;
   --chat-assistant-bg: #ffffff;
   --chat-assistant-border: #e4e4e7;
   --chip-bg: transparent;
@@ -732,7 +734,7 @@ html:lang(zh-Hant) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 4px;
 }
 
 .project-name {
@@ -768,7 +770,7 @@ html:lang(zh-Hant) {
 .entry-btn {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .entries-section-title {
@@ -776,8 +778,8 @@ html:lang(zh-Hant) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 2px 2px 0;
-  padding: 2px 2px 0;
+  margin: 4px 4px 0;
+  padding: 4px 4px 0;
 }
 
 .entries-section-heading-wrap {
@@ -928,7 +930,7 @@ details summary:focus-visible,
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  padding: 1px 8px;
+  padding: 0 8px;
   border-radius: 999px;
   border: var(--control-border-width) solid var(--control-border);
   background: var(--control-bg);
@@ -1296,7 +1298,7 @@ details summary:focus-visible,
 }
 
 .user-msg .msg-header .line {
-  color: #bfdbfe;
+  color: var(--chat-user-line);
 }
 
 .msg-text,
