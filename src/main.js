@@ -602,6 +602,11 @@ async function refreshEntriesForSelectedProject() {
   renderEntries();
 }
 
+async function refreshEntriesIfProjectSelected(projectPath) {
+  if (projectPath !== state.selectedProjectPath) return;
+  await refreshEntriesForSelectedProject();
+}
+
 function clearSelectedEntryState() {
   state.selectedEntryPath = "";
   state.selectedEntryType = "";
@@ -710,14 +715,10 @@ async function executeSessionDelete(pending) {
   hideUndoToast();
   try {
     await invoke("delete_session", { sessionPath: pending.path });
-    if (pending.projectPath === state.selectedProjectPath) {
-      await refreshEntriesForSelectedProject();
-    }
+    await refreshEntriesIfProjectSelected(pending.projectPath);
     setStatus(tt("status.sessionDeleted"), "info");
   } catch (errorCode) {
-    if (pending.projectPath === state.selectedProjectPath) {
-      await refreshEntriesForSelectedProject();
-    }
+    await refreshEntriesIfProjectSelected(pending.projectPath);
     setErrorStatus(errorCode);
   }
 }
