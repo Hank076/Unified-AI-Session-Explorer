@@ -1041,7 +1041,9 @@ function renderEntries() {
       if (aIsMain !== bIsMain) return aIsMain ? -1 : 1;
       return String(a.label || "").localeCompare(String(b.label || ""), "zh-TW");
     });
-  const sessionEntries = state.entries.filter((entry) => entry.entryType === "session");
+  const sessionEntries = state.entries
+    .filter((entry) => entry.entryType === "session")
+    .sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0));
   const subagentsByParent = new Map();
 
   for (const entry of state.entries) {
@@ -1050,6 +1052,10 @@ function renderEntries() {
       subagentsByParent.set(entry.parentSession, []);
     }
     subagentsByParent.get(entry.parentSession).push(entry);
+  }
+
+  for (const [parent, children] of subagentsByParent.entries()) {
+    children.sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0));
   }
 
   if (memoryEntries.length > 0) {

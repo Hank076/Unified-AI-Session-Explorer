@@ -322,10 +322,10 @@ pub fn list_project_entries(
             .filter_map(|item| item.ok().map(|v| v.path()))
             .filter(|path| path.is_file() && has_jsonl_extension(path))
             .collect();
-        subagent_files.sort_by_key(|path| {
-            path.file_name()
-                .map(|name| name.to_string_lossy().to_lowercase())
-                .unwrap_or_default()
+        subagent_files.sort_by(|a, b| {
+            let (a_mod, _) = get_file_metadata(a);
+            let (b_mod, _) = get_file_metadata(b);
+            b_mod.cmp(&a_mod)
         });
 
         for subagent_file in subagent_files {
