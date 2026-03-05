@@ -505,9 +505,13 @@ function showContextMenu(x, y, items) {
     btn.className = "ctx-menu-item" + (kind === "danger" ? " ctx-menu-item--danger" : "");
     btn.setAttribute("role", "menuitem");
     btn.textContent = label;
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       hideContextMenu();
-      onClick();
+      try {
+        await onClick();
+      } catch (err) {
+        console.error("ctx-menu action failed", err);
+      }
     });
     menu.appendChild(btn);
   }
