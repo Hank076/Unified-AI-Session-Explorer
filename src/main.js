@@ -552,6 +552,40 @@ function clearPendingProjectTimers(pending) {
   clearPendingTimers(pending);
 }
 
+function cancelPendingProjectDelete({ showCancelledStatus = false } = {}) {
+  const pendingProject = state.pendingProjectDelete;
+  if (!pendingProject) return;
+  clearPendingProjectTimers(pendingProject);
+  state.pendingProjectDelete = null;
+  hideUndoToast();
+  if (showCancelledStatus) {
+    setStatus(tt("status.deleteCancelled"), "info");
+  }
+}
+
+function cancelPendingSessionDelete({
+  executeNow = false,
+  refreshEntries = false,
+  showCancelledStatus = false,
+} = {}) {
+  const pendingSession = state.pendingSessionDelete;
+  if (!pendingSession) return;
+  clearPendingSessionTimers(pendingSession);
+  hideUndoToast();
+  state.pendingSessionDelete = null;
+
+  if (executeNow) {
+    void executeSessionDelete(pendingSession);
+    return;
+  }
+  if (refreshEntries) {
+    void refreshEntriesForSelectedProject();
+  }
+  if (showCancelledStatus) {
+    setStatus(tt("status.deleteCancelled"), "info");
+  }
+}
+
 async function refreshEntriesForSelectedProject() {
   if (!state.selectedProjectPath) {
     state.entries = [];
@@ -608,21 +642,8 @@ function queueSessionDelete(entry) {
   const isSession = entry.entryType === "session";
   if (!isSession && entry.entryType !== "subagent_session") return;
 
-  const pendingProject = state.pendingProjectDelete;
-  if (pendingProject) {
-    clearPendingProjectTimers(pendingProject);
-    state.pendingProjectDelete = null;
-    hideUndoToast();
-    setStatus(tt("status.deleteCancelled"), "info");
-  }
-
-  const previousPending = state.pendingSessionDelete;
-  if (previousPending?.timerId) {
-    clearPendingSessionTimers(previousPending);
-    hideUndoToast();
-    state.pendingSessionDelete = null;
-    void executeSessionDelete(previousPending);
-  }
+  cancelPendingProjectDelete({ showCancelledStatus: true });
+  cancelPendingSessionDelete({ executeNow: true });
 
   const removedPaths = [entry.path];
   if (isSession) {
@@ -763,20 +784,8 @@ function queueProjectDelete(projectPath) {
     return;
   }
 
-  const pendingSession = state.pendingSessionDelete;
-  if (pendingSession) {
-    clearPendingSessionTimers(pendingSession);
-    state.pendingSessionDelete = null;
-    hideUndoToast();
-    void refreshEntriesForSelectedProject();
-  }
-
-  const previousPending = state.pendingProjectDelete;
-  if (previousPending) {
-    clearPendingProjectTimers(previousPending);
-    hideUndoToast();
-    state.pendingProjectDelete = null;
-  }
+  cancelPendingSessionDelete({ refreshEntries: true });
+  cancelPendingProjectDelete();
 
   const pending = {
     projectPath,
