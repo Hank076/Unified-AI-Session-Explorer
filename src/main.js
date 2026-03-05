@@ -725,7 +725,9 @@ async function executeSessionDelete(pending) {
 
 function updateProjectDeleteConfirmState() {
   if (!refs.projectDeleteInput || !refs.projectDeleteConfirmButton) return;
-  const project = findSelectedProject() || state.projects.find((item) => item.path === state.pendingProjectPath);
+  const selectedProject = findSelectedProject();
+  const pendingProject = state.projects.find((item) => item.path === state.pendingProjectPath);
+  const project = selectedProject || pendingProject;
   const expectedName = project ? getProjectDisplayName(project) : "";
   const currentValue = String(refs.projectDeleteInput.value || "").trim();
   refs.projectDeleteConfirmButton.disabled = !expectedName || currentValue !== expectedName;
