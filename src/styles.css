@@ -297,7 +297,7 @@ html:lang(zh-Hant) {
 .theme-switch {
   display: inline-flex;
   gap: 8px;
-  padding: 8px;
+  padding: 4px;
   border: var(--control-border-width) solid var(--theme-switch-border);
   border-radius: 8px;
   background: var(--theme-switch-bg);
@@ -407,7 +407,7 @@ html:lang(zh-Hant) {
 
 .panel-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   padding-bottom: 8px;
@@ -488,7 +488,7 @@ html:lang(zh-Hant) {
 
 .viewer-header-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
