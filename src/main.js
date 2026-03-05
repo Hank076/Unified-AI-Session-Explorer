@@ -734,11 +734,12 @@ function updateProjectDeleteConfirmState() {
 }
 
 function formatProjectDeleteImpactSummary(impact) {
-  const sessionCount = Number(impact?.sessionCount || 0);
-  const subagentCount = Number(impact?.subagentSessionCount || 0);
-  const memoryCount = Number(impact?.memoryFileCount || 0);
-  const totalCount = Number(impact?.totalFileCount || 0);
-  const totalSize = formatBytes(Number(impact?.totalSizeBytes || 0));
+  const readImpactCount = (key) => Number(impact?.[key] || 0);
+  const sessionCount = readImpactCount("sessionCount");
+  const subagentCount = readImpactCount("subagentSessionCount");
+  const memoryCount = readImpactCount("memoryFileCount");
+  const totalCount = readImpactCount("totalFileCount");
+  const totalSize = formatBytes(readImpactCount("totalSizeBytes"));
   return tt("project.delete.impactSummary", {
     sessionCount,
     subagentCount,
