@@ -71,7 +71,6 @@ const refs = {
   hideToolEventsToggle: null,
   hideThinkingEventsToggle: null,
   hideSystemEventsWrap: null,
-  pathTooltip: null,
   themeButtons: [],
   localeSelect: null,
   aboutButton: null,
@@ -406,48 +405,6 @@ function initLocaleSelector() {
 
 function isMarkdownPath(path) {
   return /\.md$/i.test(String(path || "").trim());
-}
-
-function bindPathHover(element, text, options = {}) {
-  if (!element || !refs.pathTooltip) return;
-  const displayPath = String(text || "");
-  const delayMs = Number.isFinite(options.delayMs) ? options.delayMs : 0;
-  let timerId = null;
-
-  const showNow = (event) => {
-    refs.pathTooltip.hidden = false;
-    refs.pathTooltip.textContent = displayPath;
-    move(event);
-  };
-  const show = (event) => {
-    if (timerId) window.clearTimeout(timerId);
-    if (delayMs <= 0) {
-      showNow(event);
-      return;
-    }
-    timerId = window.setTimeout(() => {
-      showNow(event);
-      timerId = null;
-    }, delayMs);
-  };
-  const hide = () => {
-    if (timerId) {
-      window.clearTimeout(timerId);
-      timerId = null;
-    }
-    refs.pathTooltip.hidden = true;
-  };
-  const move = (event) => {
-    if (!event || refs.pathTooltip.hidden) return;
-    const offset = 14;
-    refs.pathTooltip.style.left = `${event.clientX + offset}px`;
-    refs.pathTooltip.style.top = `${event.clientY + offset}px`;
-  };
-
-  element.addEventListener("mouseenter", show);
-  element.addEventListener("mousemove", move);
-  element.addEventListener("mouseleave", hide);
-  element.addEventListener("blur", hide);
 }
 
 function setHideSystemEventsVisible(visible) {
@@ -943,7 +900,7 @@ function renderProjects() {
     const nameNode = createElement("div", "project-name", displayName);
     const pathNode = createElement("div", "project-path", displayPath);
     button.append(nameNode, pathNode);
-    bindPathHover(button, fullPath, { delayMs: 1600 });
+    button.title = fullPath;
     button.addEventListener("click", () => selectProject(project.path));
     const row = createElement("div", "list-row");
     row.append(button);
@@ -1213,7 +1170,7 @@ function createEntryButton(
   const secondary = createElement("div", "entry-secondary", secondaryParts.join(" · "));
   button.append(primary, secondary);
 
-  bindPathHover(button, entry.label, { delayMs: 1600 });
+  button.title = entry.label;
   if (state.selectedEntryPath === entry.path) button.dataset.active = "true";
   button.addEventListener("click", () => selectEntry(entry));
   return button;
@@ -2846,7 +2803,6 @@ function initDomRefs() {
     hideToolEventsToggle: "#hide-tool-events-toggle",
     hideThinkingEventsToggle: "#hide-thinking-events-toggle",
     hideSystemEventsWrap: "#viewer-event-toggle-group",
-    pathTooltip: "#path-tooltip",
     localeSelect: "#locale-select",
     aboutButton: "#about-button",
     aboutDialog: "#about-dialog",

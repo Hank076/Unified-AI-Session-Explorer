@@ -1022,25 +1022,6 @@ details summary:focus-visible,
   border: var(--panel-border-width) solid var(--panel-border);
 }
 
-.path-tooltip {
-  position: fixed;
-  z-index: 9999;
-  max-width: min(70vw, 880px);
-  border: 1px solid var(--tooltip-border);
-  border-radius: 8px;
-  background: var(--tooltip-bg);
-  color: var(--tooltip-text);
-  padding: 8px 16px;
-  font-size: 12px;
-  line-height: 1.35;
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-  transition: opacity var(--interactive-transition);
-}
-
 .danger-dialog {
   border: 1px solid var(--panel-border);
   border-radius: 16px;
