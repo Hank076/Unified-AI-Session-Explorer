@@ -47,6 +47,7 @@ const state = {
   pendingSessionDeleteCandidate: null,
   pendingProjectDelete: null,
   pendingProjectPath: "",
+  ctxMenuTarget: null,
 };
 
 const refs = {
@@ -481,6 +482,93 @@ function setViewerSearchVisible(visible) {
   if (!refs.viewerSearchWrap) return;
   refs.viewerSearchWrap.style.display = visible ? "flex" : "none";
   refs.viewerSearchWrap.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
+// ── Context Menu ─────────────────────────────────────────
+function hideContextMenu() {
+  const menu = refs.ctxMenu;
+  if (!menu) return;
+  menu.hidden = true;
+  menu.setAttribute("aria-hidden", "true");
+  menu.replaceChildren();
+  state.ctxMenuTarget = null;
+}
+
+function showContextMenu(x, y, items) {
+  const menu = refs.ctxMenu;
+  if (!menu) return;
+
+  menu.replaceChildren();
+  for (const { label, onClick, kind } of items) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ctx-menu-item" + (kind === "danger" ? " ctx-menu-item--danger" : "");
+    btn.setAttribute("role", "menuitem");
+    btn.textContent = label;
+    btn.addEventListener("click", () => {
+      hideContextMenu();
+      onClick();
+    });
+    menu.appendChild(btn);
+  }
+
+  // Position with viewport overflow guard
+  menu.hidden = false;
+  menu.removeAttribute("aria-hidden");
+  const menuW = menu.offsetWidth;
+  const menuH = menu.offsetHeight;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  menu.style.left = `${x + menuW > vw ? Math.max(0, vw - menuW - 8) : x}px`;
+  menu.style.top = `${y + menuH > vh ? Math.max(0, y - menuH) : y}px`;
+
+  const firstItem = menu.querySelector(".ctx-menu-item");
+  if (firstItem) firstItem.focus();
+}
+
+function openProjectContextMenu(event, project) {
+  event.preventDefault();
+  state.ctxMenuTarget = event.currentTarget;
+  showContextMenu(event.clientX, event.clientY, [
+    {
+      label: tt("action.openFolder"),
+      onClick: () => {
+        void window.__TAURI__.opener.openPath(project.cwdPath || project.path);
+      },
+    },
+    {
+      label: tt("action.deleteProject"),
+      kind: "danger",
+      onClick: () => {
+        void openProjectDeleteDialog(project);
+      },
+    },
+  ]);
+}
+
+function openEntryContextMenu(event, entry) {
+  event.preventDefault();
+  state.ctxMenuTarget = event.currentTarget;
+  showContextMenu(event.clientX, event.clientY, [
+    {
+      label: tt("action.copySessionId"),
+      onClick: async () => {
+        const sessionId = String(entry.path ?? "")
+          .split(/[\\/]/)
+          .pop()
+          .replace(/\.[^.]+$/, "");
+        await navigator.clipboard.writeText(sessionId);
+        setInfoStatus("status.sessionIdCopied");
+      },
+    },
+    {
+      label: tt("action.deleteConversation"),
+      kind: "danger",
+      onClick: () => {
+        openSessionDeleteDialog(entry);
+      },
+    },
+  ]);
 }
 
 function createTrashIcon() {
@@ -2838,6 +2926,7 @@ function initDomRefs() {
     sessionDeleteMessage: "#session-delete-message",
     sessionDeleteConfirmButton: "#session-delete-confirm",
     sessionDeleteCancelButton: "#session-delete-cancel",
+    ctxMenu: "#ctx-menu",
   };
 
   for (const [key, selector] of Object.entries(selectorMap)) {
@@ -2963,6 +3052,29 @@ window.addEventListener("DOMContentLoaded", async () => {
     closeAboutDialog();
   });
   bindDialogCancel(refs.aboutDialog, closeAboutDialog);
+
+  // Context menu global close handlers
+  document.addEventListener("click", (e) => {
+    if (refs.ctxMenu && !refs.ctxMenu.contains(e.target)) {
+      hideContextMenu();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (!refs.ctxMenu || refs.ctxMenu.hidden) return;
+    if (e.key === "Escape") {
+      hideContextMenu();
+      state.ctxMenuTarget?.focus();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const items = Array.from(refs.ctxMenu.querySelectorAll(".ctx-menu-item"));
+      const idx = items.indexOf(document.activeElement);
+      const next = e.key === "ArrowDown"
+        ? items[(idx + 1) % items.length]
+        : items[(idx - 1 + items.length) % items.length];
+      next?.focus();
+    }
+  });
+  refs.ctxMenu?.addEventListener("contextmenu", (e) => e.preventDefault());
 
   hideUndoToast();
   state.hideSystemEvents = true;
