@@ -126,6 +126,10 @@ function setErrorStatus(errorCode) {
   setStatus(formatError(String(errorCode)), "error");
 }
 
+function setInfoStatus(key, params = {}) {
+  setStatus(tt(key, params), "info");
+}
+
 function clearViewer() {
   state.timelineItems = [];
   state.parseErrors = [];
@@ -563,7 +567,7 @@ function cancelPendingProjectDelete({ showCancelledStatus = false } = {}) {
   state.pendingProjectDelete = null;
   hideUndoToast();
   if (showCancelledStatus) {
-    setStatus(tt("status.deleteCancelled"), "info");
+    setInfoStatus("status.deleteCancelled");
   }
 }
 
@@ -586,7 +590,7 @@ function cancelPendingSessionDelete({
     void refreshEntriesForSelectedProject();
   }
   if (showCancelledStatus) {
-    setStatus(tt("status.deleteCancelled"), "info");
+    setInfoStatus("status.deleteCancelled");
   }
 }
 
@@ -686,7 +690,7 @@ function queueSessionDelete(entry) {
         if (state.pendingSessionDelete === pending) state.pendingSessionDelete = null;
         hideUndoToast();
         void refreshEntriesForSelectedProject();
-        setStatus(tt("status.deleteCancelled"), "info");
+        setInfoStatus("status.deleteCancelled");
       },
     );
   };
@@ -716,7 +720,7 @@ async function executeSessionDelete(pending) {
   try {
     await invoke("delete_session", { sessionPath: pending.path });
     await refreshEntriesIfProjectSelected(pending.projectPath);
-    setStatus(tt("status.sessionDeleted"), "info");
+    setInfoStatus("status.sessionDeleted");
   } catch (errorCode) {
     await refreshEntriesIfProjectSelected(pending.projectPath);
     setErrorStatus(errorCode);
@@ -817,7 +821,7 @@ function queueProjectDelete(projectPath) {
         clearPendingProjectTimers(pending);
         if (state.pendingProjectDelete === pending) state.pendingProjectDelete = null;
         hideUndoToast();
-        setStatus(tt("status.deleteCancelled"), "info");
+        setInfoStatus("status.deleteCancelled");
       },
     );
   };
@@ -854,7 +858,7 @@ async function executeProjectDelete(pending) {
       state.entries = [];
       renderEntries();
     }
-    setStatus(tt("status.projectDeleted"), "info");
+    setInfoStatus("status.projectDeleted");
   } catch (errorCode) {
     setErrorStatus(errorCode);
   }
@@ -2857,7 +2861,7 @@ async function selectEntry(entry) {
     if (entry.entryType === "memory_file") {
       const payload = await invoke("read_memory", { memoryPath: entry.path });
       renderMemory(payload);
-      setStatus(tt("status.memoryLoaded"), "info");
+      setInfoStatus("status.memoryLoaded");
       return;
     }
 
@@ -2870,7 +2874,7 @@ async function selectEntry(entry) {
     if (payload.errorCode) {
       setStatus(formatError(payload.errorCode), "warn");
     } else {
-      setStatus(tt("status.sessionLoaded"), "info");
+      setInfoStatus("status.sessionLoaded");
     }
   } catch (errorCode) {
     if (entry.entryType !== "memory_file") {
