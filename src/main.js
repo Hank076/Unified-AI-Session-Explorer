@@ -130,17 +130,21 @@ function setInfoStatus(key, params = {}) {
   setStatus(tt(key, params), "info");
 }
 
+function resetViewerSearchQuery() {
+  state.timelineSearchQuery = "";
+  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
+}
+
 function clearViewer() {
   state.timelineItems = [];
   state.parseErrors = [];
   state.parseErrorCode = "";
-  state.timelineSearchQuery = "";
+  resetViewerSearchQuery();
   state.techViewState = {};
   refs.viewerTitle.textContent = tt("panel.viewer");
   renderViewerMeta("", "");
   setStatus("");
   setViewerSearchVisible(false);
-  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
   setHideSystemEventsVisible(true);
   refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt("placeholder.select"))}</p>`;
 }
@@ -2685,8 +2689,7 @@ function renderTimeline(payload) {
 
   state.parseErrorCode = payload.errorCode || "";
   state.parseErrors = Array.isArray(payload.errors) ? payload.errors : [];
-  state.timelineSearchQuery = "";
-  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
+  resetViewerSearchQuery();
   state.techViewState = {};
   state.timelineItems = buildTimelineItems(events);
 
@@ -2853,8 +2856,7 @@ async function selectEntry(entry) {
   const hideSystemEventsControl = entry.entryType === "memory_file";
   setHideSystemEventsVisible(!hideSystemEventsControl);
   setViewerSearchVisible(entry.entryType !== "memory_file");
-  state.timelineSearchQuery = "";
-  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
+  resetViewerSearchQuery();
   renderLoadingMeta(entry);
 
   try {
