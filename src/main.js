@@ -221,22 +221,34 @@ function doesProjectMatchSearch(project, query) {
   );
 }
 
+function updateInputTexts(input, placeholderKey, ariaLabelKey) {
+  if (!input) return;
+  input.placeholder = tt(placeholderKey);
+  input.setAttribute("aria-label", tt(ariaLabelKey));
+}
+
 function updateProjectSearchTexts() {
-  if (!refs.projectsSearchInput) return;
-  refs.projectsSearchInput.placeholder = tt("project.searchPlaceholder");
-  refs.projectsSearchInput.setAttribute("aria-label", tt("project.searchAria"));
+  updateInputTexts(
+    refs.projectsSearchInput,
+    "project.searchPlaceholder",
+    "project.searchAria",
+  );
 }
 
 function updateViewerSearchTexts() {
-  if (!refs.viewerSearchInput) return;
-  refs.viewerSearchInput.placeholder = tt("viewer.searchPlaceholder");
-  refs.viewerSearchInput.setAttribute("aria-label", tt("viewer.searchAria"));
+  updateInputTexts(
+    refs.viewerSearchInput,
+    "viewer.searchPlaceholder",
+    "viewer.searchAria",
+  );
 }
 
 function updateProjectDeleteTexts() {
-  if (!refs.projectDeleteInput) return;
-  refs.projectDeleteInput.placeholder = tt("project.delete.inputPlaceholder");
-  refs.projectDeleteInput.setAttribute("aria-label", tt("project.delete.inputLabel"));
+  updateInputTexts(
+    refs.projectDeleteInput,
+    "project.delete.inputPlaceholder",
+    "project.delete.inputLabel",
+  );
 }
 
 function getSystemPrefersDark() {
