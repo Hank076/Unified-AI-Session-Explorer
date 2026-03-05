@@ -508,7 +508,7 @@ function hideUndoToast() {
   refs.toastUndoButton.onclick = null;
 }
 
-function clearPendingSessionTimers(pending) {
+function clearPendingTimers(pending) {
   if (!pending) return;
   if (pending.timerId) {
     window.clearTimeout(pending.timerId);
@@ -520,16 +520,12 @@ function clearPendingSessionTimers(pending) {
   }
 }
 
+function clearPendingSessionTimers(pending) {
+  clearPendingTimers(pending);
+}
+
 function clearPendingProjectTimers(pending) {
-  if (!pending) return;
-  if (pending.timerId) {
-    window.clearTimeout(pending.timerId);
-    pending.timerId = null;
-  }
-  if (pending.countdownIntervalId) {
-    window.clearInterval(pending.countdownIntervalId);
-    pending.countdownIntervalId = null;
-  }
+  clearPendingTimers(pending);
 }
 
 async function refreshEntriesForSelectedProject() {
@@ -2652,6 +2648,31 @@ function renderTimeline(payload) {
   renderTimelineView();
 }
 
+function buildLoadingMetaRight(modifiedMs) {
+  const metaDate = formatMetaDay(modifiedMs) || "";
+  return metaDate
+    ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
+    : tt("viewer.metaSummaryNoDate", { count: "-" });
+}
+
+function renderLoadingMeta(entry) {
+  if (entry.entryType === "session") {
+    refs.viewerTitle.textContent = tt("viewer.timeline");
+    renderViewerMeta(
+      buildSessionMetaPath(String(entry.label || "")),
+      buildLoadingMetaRight(entry.modifiedMs),
+    );
+    return;
+  }
+
+  if (entry.entryType === "memory_file") {
+    renderViewerMeta(
+      buildMemoryMetaPath(String(entry.label || "")),
+      buildLoadingMetaRight(entry.modifiedMs),
+    );
+  }
+}
+
 async function loadProjects() {
   setStatus(tt("status.loadingProjects"));
   try {
@@ -2700,23 +2721,7 @@ async function selectEntry(entry) {
   setViewerSearchVisible(entry.entryType !== "memory_file");
   state.timelineSearchQuery = "";
   if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
-  if (entry.entryType === "session") {
-    const metaDate = formatMetaDay(entry.modifiedMs) || "";
-    const metaPath = buildSessionMetaPath(String(entry.label || ""));
-    const metaRight = metaDate
-      ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
-      : tt("viewer.metaSummaryNoDate", { count: "-" });
-    refs.viewerTitle.textContent = tt("viewer.timeline");
-    renderViewerMeta(metaPath, metaRight);
-  }
-  if (entry.entryType === "memory_file") {
-    const metaDate = formatMetaDay(entry.modifiedMs) || "";
-    const metaPath = buildMemoryMetaPath(String(entry.label || ""));
-    const metaRight = metaDate
-      ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
-      : tt("viewer.metaSummaryNoDate", { count: "-" });
-    renderViewerMeta(metaPath, metaRight);
-  }
+  renderLoadingMeta(entry);
 
   try {
     if (entry.entryType === "memory_file") {
