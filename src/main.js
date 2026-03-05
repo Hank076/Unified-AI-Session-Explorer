@@ -2673,6 +2673,27 @@ function renderLoadingMeta(entry) {
   }
 }
 
+function bindDialogCancel(dialog, onClose) {
+  dialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    onClose();
+  });
+}
+
+function bindDialogSubmit(form) {
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+  });
+}
+
+function bindTimelineFilterToggle(button, stateKey) {
+  button?.addEventListener("click", () => {
+    state[stateKey] = !state[stateKey];
+    updateEventFilterToggles();
+    renderTimelineView();
+  });
+}
+
 async function loadProjects() {
   setStatus(tt("status.loadingProjects"));
   try {
@@ -2820,57 +2841,32 @@ window.addEventListener("DOMContentLoaded", async () => {
   refs.projectDeleteConfirmButton?.addEventListener("click", async () => {
     await confirmProjectDelete();
   });
-  refs.projectDeleteDialog?.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeProjectDeleteDialog();
-  });
-  refs.projectDeleteForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-  });
+  bindDialogCancel(refs.projectDeleteDialog, closeProjectDeleteDialog);
+  bindDialogSubmit(refs.projectDeleteForm);
   refs.sessionDeleteCancelButton?.addEventListener("click", () => {
     closeSessionDeleteDialog();
   });
   refs.sessionDeleteConfirmButton?.addEventListener("click", () => {
     confirmSessionDelete();
   });
-  refs.sessionDeleteDialog?.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeSessionDeleteDialog();
-  });
-  refs.sessionDeleteForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-  });
+  bindDialogCancel(refs.sessionDeleteDialog, closeSessionDeleteDialog);
+  bindDialogSubmit(refs.sessionDeleteForm);
   refs.aboutButton?.addEventListener("click", () => {
     openAboutDialog();
   });
   refs.aboutCloseButton?.addEventListener("click", () => {
     closeAboutDialog();
   });
-  refs.aboutDialog?.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeAboutDialog();
-  });
+  bindDialogCancel(refs.aboutDialog, closeAboutDialog);
 
   hideUndoToast();
   state.hideSystemEvents = true;
   state.hideToolEvents = true;
   state.hideThinkingEvents = true;
   updateEventFilterToggles();
-  refs.hideSystemEventsToggle.addEventListener("click", () => {
-    state.hideSystemEvents = !state.hideSystemEvents;
-    updateEventFilterToggles();
-    renderTimelineView();
-  });
-  refs.hideToolEventsToggle?.addEventListener("click", () => {
-    state.hideToolEvents = !state.hideToolEvents;
-    updateEventFilterToggles();
-    renderTimelineView();
-  });
-  refs.hideThinkingEventsToggle?.addEventListener("click", () => {
-    state.hideThinkingEvents = !state.hideThinkingEvents;
-    updateEventFilterToggles();
-    renderTimelineView();
-  });
+  bindTimelineFilterToggle(refs.hideSystemEventsToggle, "hideSystemEvents");
+  bindTimelineFilterToggle(refs.hideToolEventsToggle, "hideToolEvents");
+  bindTimelineFilterToggle(refs.hideThinkingEventsToggle, "hideThinkingEvents");
   initLocaleSelector();
   initThemeMode();
   initColumnResizers();
