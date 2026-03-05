@@ -2639,13 +2639,11 @@ function renderTimeline(payload) {
   const eventCount = events.length;
   const totalMinutes = calculateSessionDurationMinutes(events);
   const metaDate = formatMetaDay(entry?.modifiedMs) || "";
-  const metaRight = totalMinutes
-    ? metaDate
-      ? tt("viewer.metaSummaryWithDuration", { date: metaDate, count: eventCount, minutes: totalMinutes })
-      : tt("viewer.metaSummaryNoDateWithDuration", { count: eventCount, minutes: totalMinutes })
-    : metaDate
-      ? tt("viewer.metaSummary", { date: metaDate, count: eventCount })
-      : tt("viewer.metaSummaryNoDate", { count: eventCount });
+  const metaRight = buildViewerMetaSummary({
+    date: metaDate,
+    count: eventCount,
+    minutes: totalMinutes,
+  });
 
   refs.viewerTitle.textContent = tt("viewer.timeline");
   renderViewerMeta(metaPath, metaRight);
@@ -2660,11 +2658,20 @@ function renderTimeline(payload) {
   renderTimelineView();
 }
 
+function buildViewerMetaSummary({ date, count, minutes = null }) {
+  if (minutes) {
+    return date
+      ? tt("viewer.metaSummaryWithDuration", { date, count, minutes })
+      : tt("viewer.metaSummaryNoDateWithDuration", { count, minutes });
+  }
+  return date
+    ? tt("viewer.metaSummary", { date, count })
+    : tt("viewer.metaSummaryNoDate", { count });
+}
+
 function buildLoadingMetaRight(modifiedMs) {
   const metaDate = formatMetaDay(modifiedMs) || "";
-  return metaDate
-    ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
-    : tt("viewer.metaSummaryNoDate", { count: "-" });
+  return buildViewerMetaSummary({ date: metaDate, count: "-" });
 }
 
 function renderLoadingMeta(entry) {
