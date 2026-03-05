@@ -122,6 +122,10 @@ function formatError(code) {
   return tt("error.unknown", { code });
 }
 
+function setErrorStatus(errorCode) {
+  setStatus(formatError(String(errorCode)), "error");
+}
+
 function clearViewer() {
   state.timelineItems = [];
   state.parseErrors = [];
@@ -714,7 +718,7 @@ async function executeSessionDelete(pending) {
     if (pending.projectPath === state.selectedProjectPath) {
       await refreshEntriesForSelectedProject();
     }
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
@@ -848,7 +852,7 @@ async function executeProjectDelete(pending) {
     }
     setStatus(tt("status.projectDeleted"), "info");
   } catch (errorCode) {
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
@@ -2804,7 +2808,7 @@ async function loadProjects() {
     renderProjects();
     setStatus(tt("status.projectsLoaded", { count: state.projects.length }));
   } catch (errorCode) {
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
@@ -2829,7 +2833,7 @@ async function selectProject(projectPath) {
   } catch (errorCode) {
     state.entries = [];
     renderEntries();
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
@@ -2868,7 +2872,7 @@ async function selectEntry(entry) {
     if (entry.entryType !== "memory_file") {
       setHideSystemEventsVisible(true);
     }
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
