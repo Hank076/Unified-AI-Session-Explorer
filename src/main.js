@@ -97,6 +97,10 @@ function tt(key, params) {
   return t(state.locale, key, params);
 }
 
+function getSubagentToggleSymbol(expanded) {
+  return expanded ? "▾" : "▸";
+}
+
 function applyStaticTranslations() {
   document.documentElement.lang = state.locale;
   for (const node of document.querySelectorAll("[data-i18n]")) {
@@ -1046,10 +1050,13 @@ function renderEntries() {
 
     let toggle = null;
     if (hasChildren) {
-      toggle = createElement("button", "entry-toggle", expanded ? "▾" : "▸");
+      toggle = createElement("button", "entry-toggle row-action-btn", getSubagentToggleSymbol(expanded));
       toggle.type = "button";
       toggle.title = expanded ? tt("action.collapseSubagent") : tt("action.expandSubagent");
-      toggle.setAttribute("aria-label", toggle.title);
+      toggle.setAttribute("aria-label", `${toggle.title} · ${tt("entry.subagentToggleLabel")}`);
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      toggle.dataset.expanded = expanded ? "true" : "false";
+      toggle.dataset.label = tt("entry.subagentToggleLabel");
       toggle.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();

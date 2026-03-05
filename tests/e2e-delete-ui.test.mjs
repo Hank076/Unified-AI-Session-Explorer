@@ -535,3 +535,32 @@ test("viewer meta shows total minutes from system turn_duration events", async (
 
   app.cleanup();
 });
+
+test("subagent toggle button has clear state and purpose", async () => {
+  const app = await setupApp();
+  const { window } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const toggle = window.document.querySelector(".entry-toggle");
+  assert.ok(toggle);
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(/(子對話|Subagent)/.test(toggle.getAttribute("aria-label") || ""), true);
+  assert.equal(/(子對話|Subagent)/.test(toggle.getAttribute("data-label") || ""), true);
+  assert.equal((toggle.textContent || "").includes("▸"), true);
+
+  toggle.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const expandedToggle = window.document.querySelector(".entry-toggle");
+  assert.ok(expandedToggle);
+  assert.equal(expandedToggle.getAttribute("aria-expanded"), "true");
+  assert.equal(/(子對話|Subagent)/.test(expandedToggle.getAttribute("aria-label") || ""), true);
+  assert.equal(/(子對話|Subagent)/.test(expandedToggle.getAttribute("data-label") || ""), true);
+  assert.equal((expandedToggle.textContent || "").includes("▾"), true);
+
+  app.cleanup();
+});

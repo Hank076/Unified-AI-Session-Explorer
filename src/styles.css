@@ -820,21 +820,16 @@ body {
 }
 
 .entry-toggle {
-  border: var(--control-border-width) solid var(--control-border);
-  background: var(--control-bg);
-  color: var(--text-secondary);
-  border-radius: 8px;
-  cursor: pointer;
-  width: 24px;
-  height: 24px;
-  padding: 0;
   line-height: 1;
-  font-size: 11px;
-  transition: background var(--interactive-transition), border-color var(--interactive-transition);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
-.entry-toggle:hover {
-  background: var(--control-bg-hover);
+.entry-toggle[data-expanded="true"] {
+  border-color: color-mix(in oklab, var(--accent) 52%, var(--control-border));
+  background: color-mix(in oklab, var(--accent) 14%, var(--control-bg));
+  color: var(--text-primary);
 }
 
 .entry-primary {
