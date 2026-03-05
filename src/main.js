@@ -2706,6 +2706,56 @@ function bindTimelineFilterToggle(button, stateKey) {
   });
 }
 
+function initDomRefs() {
+  const selectorMap = {
+    panelGrid: "#panel-grid",
+    projectsPanel: "#projects-panel",
+    entriesPanel: "#entries-panel",
+    resizerLeft: "#resizer-left",
+    resizerMiddle: "#resizer-middle",
+    projectsList: "#projects-list",
+    projectsSearchInput: "#projects-search-input",
+    entriesList: "#entries-list",
+    viewerTitle: "#viewer-title",
+    viewerMeta: "#viewer-meta",
+    viewerMetaPath: "#viewer-meta-path",
+    viewerMetaTime: "#viewer-meta-time",
+    viewerSearchWrap: "#viewer-search",
+    viewerSearchInput: "#viewer-search-input",
+    viewerContent: "#viewer-content",
+    status: "#status",
+    hideSystemEventsToggle: "#hide-system-events-toggle",
+    hideToolEventsToggle: "#hide-tool-events-toggle",
+    hideThinkingEventsToggle: "#hide-thinking-events-toggle",
+    hideSystemEventsWrap: "#viewer-event-toggle-group",
+    pathTooltip: "#path-tooltip",
+    localeSelect: "#locale-select",
+    aboutButton: "#about-button",
+    aboutDialog: "#about-dialog",
+    aboutCloseButton: "#about-close",
+    toast: "#undo-toast",
+    toastMessage: "#undo-toast-message",
+    toastUndoButton: "#undo-toast-undo",
+    projectDeleteDialog: "#project-delete-dialog",
+    projectDeleteForm: "#project-delete-form",
+    projectDeleteImpact: "#project-delete-impact",
+    projectDeleteMessage: "#project-delete-message",
+    projectDeleteInput: "#project-delete-input",
+    projectDeleteConfirmButton: "#project-delete-confirm",
+    projectDeleteCancelButton: "#project-delete-cancel",
+    sessionDeleteDialog: "#session-delete-dialog",
+    sessionDeleteForm: "#session-delete-form",
+    sessionDeleteMessage: "#session-delete-message",
+    sessionDeleteConfirmButton: "#session-delete-confirm",
+    sessionDeleteCancelButton: "#session-delete-cancel",
+  };
+
+  for (const [key, selector] of Object.entries(selectorMap)) {
+    refs[key] = document.querySelector(selector);
+  }
+  refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
+}
+
 async function loadProjects() {
   setStatus(tt("status.loadingProjects"));
   try {
@@ -2784,47 +2834,7 @@ async function selectEntry(entry) {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  refs.panelGrid = document.querySelector("#panel-grid");
-  refs.projectsPanel = document.querySelector("#projects-panel");
-  refs.entriesPanel = document.querySelector("#entries-panel");
-  refs.resizerLeft = document.querySelector("#resizer-left");
-  refs.resizerMiddle = document.querySelector("#resizer-middle");
-  refs.projectsList = document.querySelector("#projects-list");
-  refs.projectsSearchInput = document.querySelector("#projects-search-input");
-  refs.entriesList = document.querySelector("#entries-list");
-  refs.viewerTitle = document.querySelector("#viewer-title");
-  refs.viewerMeta = document.querySelector("#viewer-meta");
-  refs.viewerMetaPath = document.querySelector("#viewer-meta-path");
-  refs.viewerMetaTime = document.querySelector("#viewer-meta-time");
-  refs.viewerSearchWrap = document.querySelector("#viewer-search");
-  refs.viewerSearchInput = document.querySelector("#viewer-search-input");
-  refs.viewerContent = document.querySelector("#viewer-content");
-  refs.status = document.querySelector("#status");
-  refs.hideSystemEventsToggle = document.querySelector("#hide-system-events-toggle");
-  refs.hideToolEventsToggle = document.querySelector("#hide-tool-events-toggle");
-  refs.hideThinkingEventsToggle = document.querySelector("#hide-thinking-events-toggle");
-  refs.hideSystemEventsWrap = document.querySelector("#viewer-event-toggle-group");
-  refs.pathTooltip = document.querySelector("#path-tooltip");
-  refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
-  refs.localeSelect = document.querySelector("#locale-select");
-  refs.aboutButton = document.querySelector("#about-button");
-  refs.aboutDialog = document.querySelector("#about-dialog");
-  refs.aboutCloseButton = document.querySelector("#about-close");
-  refs.toast = document.querySelector("#undo-toast");
-  refs.toastMessage = document.querySelector("#undo-toast-message");
-  refs.toastUndoButton = document.querySelector("#undo-toast-undo");
-  refs.projectDeleteDialog = document.querySelector("#project-delete-dialog");
-  refs.projectDeleteForm = document.querySelector("#project-delete-form");
-  refs.projectDeleteImpact = document.querySelector("#project-delete-impact");
-  refs.projectDeleteMessage = document.querySelector("#project-delete-message");
-  refs.projectDeleteInput = document.querySelector("#project-delete-input");
-  refs.projectDeleteConfirmButton = document.querySelector("#project-delete-confirm");
-  refs.projectDeleteCancelButton = document.querySelector("#project-delete-cancel");
-  refs.sessionDeleteDialog = document.querySelector("#session-delete-dialog");
-  refs.sessionDeleteForm = document.querySelector("#session-delete-form");
-  refs.sessionDeleteMessage = document.querySelector("#session-delete-message");
-  refs.sessionDeleteConfirmButton = document.querySelector("#session-delete-confirm");
-  refs.sessionDeleteCancelButton = document.querySelector("#session-delete-cancel");
+  initDomRefs();
 
   for (const button of refs.themeButtons) {
     button.addEventListener("click", () => {
