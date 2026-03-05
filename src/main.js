@@ -2332,6 +2332,7 @@ function renderChatItem(item) {
   const rowClass = item.kind === "chat_user" ? "user-row" : "assist-row";
   const msgClass = item.kind === "chat_user" ? "user-msg" : "assist-msg";
   const article = createElement("article", rowClass);
+  article.dataset.anchor = item.line;
   const bubble = createElement("section", msgClass);
   const header = createElement("header", "msg-header");
   const tags = Array.isArray(item.tags) ? item.tags : [];
@@ -2468,6 +2469,7 @@ function renderChatItem(item) {
 
 function renderTechGroup(group) {
   const wrapper = createElement("section", "tool-row");
+  wrapper.dataset.anchor = group.id;
   const block = createElement("section", "tool-block");
   const viewState = state.techViewState[group.id] || {
     expanded: false,
@@ -2556,7 +2558,21 @@ function renderTechGroup(group) {
   return wrapper;
 }
 
-function renderTimelineView() {
+function renderTimelineView(preserveScroll = false) {
+  let anchorKey = null;
+  let anchorOffset = 0;
+  if (preserveScroll) {
+    const containerRect = refs.viewerContent.getBoundingClientRect();
+    const anchors = refs.viewerContent.querySelectorAll("[data-anchor]");
+    for (const el of anchors) {
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom > containerRect.top) {
+        anchorKey = el.dataset.anchor;
+        anchorOffset = rect.top - containerRect.top;
+        break;
+      }
+    }
+  }
   refs.viewerContent.innerHTML = "";
 
   if (state.parseErrorCode === "PARSE_PARTIAL") {
@@ -2619,7 +2635,16 @@ function renderTimelineView() {
     refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt(messageKey))}</p>`;
   } else {
     requestAnimationFrame(() => {
-      refs.viewerContent.scrollTop = refs.viewerContent.scrollHeight;
+      if (preserveScroll && anchorKey !== null) {
+        const target = refs.viewerContent.querySelector(`[data-anchor="${CSS.escape(String(anchorKey))}"]`);
+        if (target) {
+          const containerRect = refs.viewerContent.getBoundingClientRect();
+          const targetRect = target.getBoundingClientRect();
+          refs.viewerContent.scrollTop += targetRect.top - containerRect.top - anchorOffset;
+        }
+      } else if (!preserveScroll) {
+        refs.viewerContent.scrollTop = refs.viewerContent.scrollHeight;
+      }
     });
   }
 }
@@ -2767,7 +2792,7 @@ function bindTimelineFilterToggle(button, stateKey) {
   bindClick(button, () => {
     state[stateKey] = !state[stateKey];
     updateEventFilterToggles();
-    renderTimelineView();
+    renderTimelineView(true);
   });
 }
 
