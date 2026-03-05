@@ -18,6 +18,11 @@ const CHAT_PREVIEW_LENGTH = 380;
 const SESSION_DELETE_UNDO_MS = 8000;
 const THEME_STORAGE_KEY = "claude_history_theme_mode";
 const LOCALE_STORAGE_KEY = "claude_history_locale";
+const ERROR_TRANSLATION_KEYS = {
+  NOT_FOUND: "error.NOT_FOUND",
+  READ_FAILED: "error.READ_FAILED",
+  PARSE_PARTIAL: "error.PARSE_PARTIAL",
+};
 
 const state = {
   projects: [],
@@ -112,9 +117,8 @@ function setStatus(message, type = "info") {
 }
 
 function formatError(code) {
-  if (code === "NOT_FOUND") return tt("error.NOT_FOUND");
-  if (code === "READ_FAILED") return tt("error.READ_FAILED");
-  if (code === "PARSE_PARTIAL") return tt("error.PARSE_PARTIAL");
+  const translationKey = ERROR_TRANSLATION_KEYS[code];
+  if (translationKey) return tt(translationKey);
   return tt("error.unknown", { code });
 }
 
