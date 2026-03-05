@@ -2815,11 +2815,11 @@ function initDomRefs() {
 }
 
 async function loadProjects() {
-  setStatus(tt("status.loadingProjects"));
+  setInfoStatus("status.loadingProjects");
   try {
     state.projects = await invoke("list_projects");
     renderProjects();
-    setStatus(tt("status.projectsLoaded", { count: state.projects.length }));
+    setInfoStatus("status.projectsLoaded", { count: state.projects.length });
   } catch (errorCode) {
     setErrorStatus(errorCode);
   }
@@ -2829,7 +2829,7 @@ async function selectProject(projectPath) {
   state.selectedProjectPath = projectPath;
   clearSelectedEntryState();
   renderProjects();
-  setStatus(tt("status.loadingEntries"));
+  setInfoStatus("status.loadingEntries");
 
   try {
     state.entries = await invoke("list_project_entries", {
@@ -2842,7 +2842,7 @@ async function selectProject(projectPath) {
       }
     }
     renderEntries();
-    setStatus(tt("status.entriesLoaded", { count: state.entries.length }));
+    setInfoStatus("status.entriesLoaded", { count: state.entries.length });
   } catch (errorCode) {
     state.entries = [];
     renderEntries();
@@ -2854,7 +2854,7 @@ async function selectEntry(entry) {
   state.selectedEntryPath = entry.path;
   state.selectedEntryType = entry.entryType;
   renderEntries();
-  setStatus(tt("status.loadingContent"));
+  setInfoStatus("status.loadingContent");
   const hideSystemEventsControl = entry.entryType === "memory_file";
   setHideSystemEventsVisible(!hideSystemEventsControl);
   setViewerSearchVisible(entry.entryType !== "memory_file");
