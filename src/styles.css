@@ -293,7 +293,7 @@ html:lang(zh-Hant) {
   margin: 0;
   color: var(--brand-sub);
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .header-controls {
@@ -428,7 +428,7 @@ html:lang(zh-Hant) {
 .panel h2 {
   margin: 0;
   font-family: var(--font-title);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--panel-title);
 }
 
@@ -437,7 +437,7 @@ html:lang(zh-Hant) {
   border-radius: 999px;
   color: var(--chip-text);
   background: var(--chip-bg);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   padding: 8px;
   display: none;
@@ -592,7 +592,7 @@ html:lang(zh-Hant) {
 }
 
 .meta-time {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--viewer-meta-time);
 }
 
@@ -812,7 +812,7 @@ html:lang(zh-Hant) {
 .project-path {
   width: 100%;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -867,7 +867,7 @@ html:lang(zh-Hant) {
 }
 
 .entries-section-heading {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -887,7 +887,7 @@ html:lang(zh-Hant) {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--chip-text);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   padding: 0 8px;
 }
@@ -919,7 +919,7 @@ html:lang(zh-Hant) {
 }
 
 .entry-secondary {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -997,7 +997,7 @@ details summary:focus-visible,
   border: var(--control-border-width) solid var(--control-border);
   background: var(--control-bg);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 
@@ -1263,7 +1263,7 @@ details summary:focus-visible,
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font: 700 11px/1 var(--font-ui);
+  font: 700 12px/1 var(--font-ui);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--toast-text) 62%, var(--accent) 38%);
@@ -1298,7 +1298,7 @@ details summary:focus-visible,
   border-radius: 999px;
   padding: 8px 16px;
   cursor: pointer;
-  font: 800 11px/1 var(--font-ui);
+  font: 800 12px/1 var(--font-ui);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   flex-shrink: 0;
@@ -1418,7 +1418,7 @@ details summary:focus-visible,
 }
 
 .role-lbl {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1432,7 +1432,7 @@ details summary:focus-visible,
 
 .time-lbl {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 
@@ -1448,7 +1448,7 @@ details summary:focus-visible,
   padding: 0 8px;
   border-radius: 8px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   border: var(--control-border-width) solid transparent;
 }
 
@@ -1466,7 +1466,7 @@ details summary:focus-visible,
 
 .msg-header .line {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
@@ -1512,7 +1512,7 @@ details summary:focus-visible,
 }
 
 .tool-hdr-txt {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
   flex: 1;
@@ -1525,7 +1525,7 @@ details summary:focus-visible,
   border-radius: 8px;
   padding: 8px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .tool-raw-btn:hover {
@@ -1595,7 +1595,7 @@ details summary:focus-visible,
 }
 
 .tag.inline-tag {
-  font-size: 11px;
+  font-size: 12px;
   padding: 0 8px;
 }
 
