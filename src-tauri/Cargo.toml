@@ -1,9 +1,12 @@
 [package]
 name = "unified-ai-session-explorer"
 version = "0.1.0"
-description = "Unified AI Session Explorer"
-authors = ["you"]
+description = "A local-first desktop app to browse and analyze AI sessions."
+authors = ["Hank Chen"]
 edition = "2021"
+repository = "https://github.com/Hank076/Unified-AI-Session-Explorer"
+license = "MIT"
+readme = "../README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,7 +14,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "tracelens_lib"
+name = "unified_ai_session_explorer_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

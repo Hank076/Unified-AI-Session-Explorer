@@ -64,6 +64,18 @@ pub struct TimelineEvent {
     timestamp: Option<String>,
     role: Option<String>,
     event_type: Option<String>,
+    subtype: Option<String>,
+    uuid: Option<String>,
+    parent_uuid: Option<String>,
+    logical_parent_uuid: Option<String>,
+    session_id: Option<String>,
+    request_id: Option<String>,
+    message_id: Option<String>,
+    tool_use_id: Option<String>,
+    parent_tool_use_id: Option<String>,
+    operation: Option<String>,
+    is_sidechain: Option<bool>,
+    is_meta: Option<bool>,
     summary: String,
     raw: Value,
 }
@@ -74,6 +86,13 @@ pub struct SessionMetadata {
     pub model_name: Option<String>,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub total_cache_creation_input_tokens: u64,
+    pub total_cache_read_input_tokens: u64,
+    pub total_web_search_requests: u64,
+    pub total_web_fetch_requests: u64,
+    pub service_tier: Option<String>,
+    pub speed: Option<String>,
+    pub inference_geo: Option<String>,
     pub start_time: Option<String>,
     pub end_time: Option<String>,
 }
@@ -96,6 +115,122 @@ pub struct ProjectDeleteImpact {
     pub memory_file_count: usize,
     pub total_file_count: usize,
     pub total_size_bytes: u64,
+}
+
+#[derive(Debug, Default)]
+struct SessionMetadataAccumulator {
+    model_name: Option<String>,
+    total_input_tokens: u64,
+    total_output_tokens: u64,
+    total_cache_creation_input_tokens: u64,
+    total_cache_read_input_tokens: u64,
+    total_web_search_requests: u64,
+    total_web_fetch_requests: u64,
+    service_tier: Option<String>,
+    speed: Option<String>,
+    inference_geo: Option<String>,
+}
+
+impl SessionMetadataAccumulator {
+    fn observe_model_name(&mut self, value: &Value) {
+        if self.model_name.is_none() {
+            self.model_name = extract_string_paths(
+                value,
+                &[
+                    "message.model",
+                    "model",
+                    "model_name",
+                    "request.model",
+                    "request.message.model",
+                ],
+            );
+        }
+    }
+
+    fn add_usage_from_event(&mut self, value: &Value) {
+        let Some(usage) = value
+            .get("usage")
+            .or_else(|| value.get("message").and_then(|message| message.get("usage")))
+        else {
+            return;
+        };
+
+        self.total_input_tokens += usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        self.total_output_tokens += usage
+            .get("output_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        self.total_cache_creation_input_tokens += usage
+            .get("cache_creation_input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        self.total_cache_read_input_tokens += usage
+            .get("cache_read_input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        if let Some(server_tool_use) = usage.get("server_tool_use") {
+            self.total_web_search_requests += server_tool_use
+                .get("web_search_requests")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            self.total_web_fetch_requests += server_tool_use
+                .get("web_fetch_requests")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+        }
+
+        if self.service_tier.is_none() {
+            self.service_tier = usage
+                .get("service_tier")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+        if self.speed.is_none() {
+            self.speed = usage.get("speed").and_then(|v| v.as_str()).map(str::to_string);
+        }
+        if self.inference_geo.is_none() {
+            self.inference_geo = usage
+                .get("inference_geo")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+    }
+
+    fn build_metadata(self, start_time: Option<String>, end_time: Option<String>) -> SessionMetadata {
+        SessionMetadata {
+            model_name: self.model_name,
+            total_input_tokens: self.total_input_tokens,
+            total_output_tokens: self.total_output_tokens,
+            total_cache_creation_input_tokens: self.total_cache_creation_input_tokens,
+            total_cache_read_input_tokens: self.total_cache_read_input_tokens,
+            total_web_search_requests: self.total_web_search_requests,
+            total_web_fetch_requests: self.total_web_fetch_requests,
+            service_tier: self.service_tier,
+            speed: self.speed,
+            inference_geo: self.inference_geo,
+            start_time,
+            end_time,
+        }
+    }
+}
+
+fn build_entry(entry_type: &str, path: &Path, label: String, parent_session: Option<String>) -> Entry {
+    let (modified_ms, size_bytes) = get_file_metadata(path);
+    Entry {
+        entry_type: entry_type.to_string(),
+        label,
+        path: path.to_string_lossy().to_string(),
+        parent_session,
+        modified_ms,
+        size_bytes,
+    }
+}
+
+fn file_name_or(path: &Path, fallback: &str) -> String {
+    path.file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| fallback.to_string())
 }
 
 #[tauri::command]
@@ -152,19 +287,8 @@ pub fn list_project_entries(
         });
 
         for memory_file in memory_files {
-            let label = memory_file
-                .file_name()
-                .map(|v| v.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-            let (modified_ms, size_bytes) = get_file_metadata(&memory_file);
-            entries.push(Entry {
-                entry_type: "memory_file".to_string(),
-                label,
-                path: memory_file.to_string_lossy().to_string(),
-                parent_session: None,
-                modified_ms,
-                size_bytes,
-            });
+            let label = file_name_or(&memory_file, "unknown");
+            entries.push(build_entry("memory_file", &memory_file, label, None));
         }
     }
 
@@ -184,20 +308,9 @@ pub fn list_project_entries(
             .file_stem()
             .map(|v| v.to_string_lossy().to_string())
             .unwrap_or_default();
-        let session_label = session
-            .file_name()
-            .map(|v| v.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unknown.jsonl".to_string());
+        let session_label = file_name_or(&session, "unknown.jsonl");
 
-        let (modified_ms, size_bytes) = get_file_metadata(&session);
-        entries.push(Entry {
-            entry_type: "session".to_string(),
-            label: session_label,
-            path: session.to_string_lossy().to_string(),
-            parent_session: None,
-            modified_ms,
-            size_bytes,
-        });
+        entries.push(build_entry("session", &session, session_label, None));
 
         let subagents_dir = project.join(&stem).join("subagents");
         if !subagents_dir.is_dir() {
@@ -209,26 +322,20 @@ pub fn list_project_entries(
             .filter_map(|item| item.ok().map(|v| v.path()))
             .filter(|path| path.is_file() && has_jsonl_extension(path))
             .collect();
-        subagent_files.sort_by_key(|path| {
-            path.file_name()
-                .map(|name| name.to_string_lossy().to_lowercase())
-                .unwrap_or_default()
+        subagent_files.sort_by(|a, b| {
+            let (a_mod, _) = get_file_metadata(a);
+            let (b_mod, _) = get_file_metadata(b);
+            b_mod.cmp(&a_mod)
         });
 
         for subagent_file in subagent_files {
-            let label = subagent_file
-                .file_name()
-                .map(|v| v.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unknown.jsonl".to_string());
-            let (modified_ms, size_bytes) = get_file_metadata(&subagent_file);
-            entries.push(Entry {
-                entry_type: "subagent_session".to_string(),
+            let label = file_name_or(&subagent_file, "unknown.jsonl");
+            entries.push(build_entry(
+                "subagent_session",
+                &subagent_file,
                 label,
-                path: subagent_file.to_string_lossy().to_string(),
-                parent_session: Some(stem.clone()),
-                modified_ms,
-                size_bytes,
-            });
+                Some(stem.clone()),
+            ));
         }
     }
 
@@ -253,6 +360,7 @@ pub fn read_memory(memory_path: String, base_path: Option<String>) -> Result<Mem
 pub fn read_session_timeline(
     session_path: String,
     base_path: Option<String>,
+    strict_mode: Option<bool>,
 ) -> Result<SessionTimelinePayload, String> {
     let root = resolve_root_path(base_path.as_deref())?;
     let session_file = validate_under_root(&root, Path::new(&session_path))?;
@@ -267,9 +375,7 @@ pub fn read_session_timeline(
     let mut events = Vec::new();
     let mut errors = Vec::new();
 
-    let mut model_name = None;
-    let mut total_input_tokens = 0;
-    let mut total_output_tokens = 0;
+    let mut metadata_accumulator = SessionMetadataAccumulator::default();
 
     for (index, line) in content.lines().enumerate() {
         let line_number = index + 1;
@@ -279,16 +385,8 @@ pub fn read_session_timeline(
 
         match serde_json::from_str::<Value>(line) {
             Ok(value) => {
-                // 統計元數據
-                if model_name.is_none() {
-                    model_name = extract_string(&value, &["model", "model_name", "request.model"]);
-                }
-                
-                if let Some(usage) = value.get("usage").or_else(|| value.get("message").and_then(|m| m.get("usage"))) {
-                    total_input_tokens += usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                    total_output_tokens += usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                }
-
+                metadata_accumulator.observe_model_name(&value);
+                metadata_accumulator.add_usage_from_event(&value);
                 events.push(build_timeline_event(line_number, value));
             }
             Err(_) => errors.push(ParseError {
@@ -298,7 +396,9 @@ pub fn read_session_timeline(
         }
     }
 
-    sort_events_by_time(&mut events);
+    if !strict_mode.unwrap_or(false) {
+        sort_events_by_time(&mut events);
+    }
 
     let start_time = events.first().and_then(|e| e.timestamp.clone());
     let end_time = events.last().and_then(|e| e.timestamp.clone());
@@ -312,13 +412,7 @@ pub fn read_session_timeline(
         },
         errors,
         events,
-        metadata: SessionMetadata {
-            model_name,
-            total_input_tokens,
-            total_output_tokens,
-            start_time,
-            end_time,
-        },
+        metadata: metadata_accumulator.build_metadata(start_time, end_time),
     })
 }
 
@@ -394,9 +488,24 @@ pub fn get_project_delete_impact(
 }
 
 fn build_timeline_event(line: usize, raw: Value) -> TimelineEvent {
-    let timestamp = extract_string(&raw, &["timestamp", "created_at", "time", "ts"]);
-    let role = extract_string(&raw, &["role", "speaker", "author", "actor"]);
-    let event_type = extract_string(&raw, &["type", "event_type", "event"]);
+    let timestamp = extract_string_paths(&raw, &["timestamp", "created_at", "time", "ts"]);
+    let role = extract_string_paths(
+        &raw,
+        &["message.role", "role", "speaker", "author", "actor"],
+    );
+    let event_type = extract_string_paths(&raw, &["type", "event_type", "event"]);
+    let subtype = extract_string_paths(&raw, &["subtype", "data.type"]);
+    let uuid = extract_string_paths(&raw, &["uuid"]);
+    let parent_uuid = extract_string_paths(&raw, &["parentUuid"]);
+    let logical_parent_uuid = extract_string_paths(&raw, &["logicalParentUuid"]);
+    let session_id = extract_string_paths(&raw, &["sessionId"]);
+    let request_id = extract_string_paths(&raw, &["requestId"]);
+    let message_id = extract_string_paths(&raw, &["messageId", "message.id"]);
+    let tool_use_id = extract_string_paths(&raw, &["toolUseID", "sourceToolUseID"]);
+    let parent_tool_use_id = extract_string_paths(&raw, &["parentToolUseID"]);
+    let operation = extract_string_paths(&raw, &["operation"]);
+    let is_sidechain = raw.get("isSidechain").and_then(|v| v.as_bool());
+    let is_meta = raw.get("isMeta").and_then(|v| v.as_bool());
     let summary = build_summary(&raw);
 
     TimelineEvent {
@@ -404,6 +513,18 @@ fn build_timeline_event(line: usize, raw: Value) -> TimelineEvent {
         timestamp,
         role,
         event_type,
+        subtype,
+        uuid,
+        parent_uuid,
+        logical_parent_uuid,
+        session_id,
+        request_id,
+        message_id,
+        tool_use_id,
+        parent_tool_use_id,
+        operation,
+        is_sidechain,
+        is_meta,
         summary,
         raw,
     }
@@ -443,6 +564,26 @@ fn extract_string(value: &Value, keys: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+fn extract_string_paths(value: &Value, paths: &[&str]) -> Option<String> {
+    for path in paths {
+        let found = get_path_value(value, path).and_then(|v| v.as_str());
+        if let Some(s) = found {
+            if !s.trim().is_empty() {
+                return Some(s.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn get_path_value<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut current = value;
+    for segment in path.split('.') {
+        current = current.get(segment)?;
+    }
+    Some(current)
 }
 
 fn infer_project_cwd_path_cached(project_dir: &Path) -> Option<String> {
@@ -741,12 +882,77 @@ mod tests {
         let payload = read_session_timeline(
             session.to_string_lossy().to_string(),
             Some(root.to_string_lossy().to_string()),
+            None,
         )
         .expect("parse session");
 
         assert_eq!(payload.error_code.as_deref(), Some(ERR_PARSE_PARTIAL));
         assert_eq!(payload.errors.len(), 1);
         assert_eq!(payload.events.len(), 2);
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn strict_mode_preserves_original_line_order() {
+        clear_project_cwd_cache();
+        let root = unique_temp_dir("strict-order");
+        let session = root.join("order.jsonl");
+        write_file(
+            &session,
+            "{\"timestamp\":\"2026-03-02T00:00:00Z\",\"content\":\"first\"}\n{\"timestamp\":\"2026-03-01T00:00:00Z\",\"content\":\"second\"}\n",
+        );
+
+        let strict_payload = read_session_timeline(
+            session.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+            Some(true),
+        )
+        .expect("parse strict session");
+
+        let legacy_payload = read_session_timeline(
+            session.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+            Some(false),
+        )
+        .expect("parse legacy session");
+
+        assert_eq!(strict_payload.events[0].line, 1);
+        assert_eq!(legacy_payload.events[0].line, 2);
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn parse_session_extracts_model_and_usage_details() {
+        clear_project_cwd_cache();
+        let root = unique_temp_dir("metadata");
+        let session = root.join("meta.jsonl");
+        write_file(
+            &session,
+            "{\"type\":\"assistant\",\"sessionId\":\"sid-1\",\"timestamp\":\"2026-03-01T00:00:00Z\",\"message\":{\"role\":\"assistant\",\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":10,\"output_tokens\":20,\"cache_creation_input_tokens\":30,\"cache_read_input_tokens\":40,\"server_tool_use\":{\"web_search_requests\":2,\"web_fetch_requests\":3},\"service_tier\":\"standard\",\"speed\":\"standard\",\"inference_geo\":\"not_available\"}}}\n",
+        );
+
+        let payload = read_session_timeline(
+            session.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+            Some(true),
+        )
+        .expect("parse session metadata");
+
+        assert_eq!(payload.metadata.model_name.as_deref(), Some("claude-sonnet-4-6"));
+        assert_eq!(payload.metadata.total_input_tokens, 10);
+        assert_eq!(payload.metadata.total_output_tokens, 20);
+        assert_eq!(payload.metadata.total_cache_creation_input_tokens, 30);
+        assert_eq!(payload.metadata.total_cache_read_input_tokens, 40);
+        assert_eq!(payload.metadata.total_web_search_requests, 2);
+        assert_eq!(payload.metadata.total_web_fetch_requests, 3);
+        assert_eq!(payload.metadata.service_tier.as_deref(), Some("standard"));
+        assert_eq!(payload.metadata.speed.as_deref(), Some("standard"));
+        assert_eq!(payload.metadata.inference_geo.as_deref(), Some("not_available"));
+        assert_eq!(payload.events.len(), 1);
+        assert_eq!(payload.events[0].role.as_deref(), Some("assistant"));
+        assert_eq!(payload.events[0].session_id.as_deref(), Some("sid-1"));
 
         fs::remove_dir_all(root).expect("cleanup");
     }

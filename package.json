@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "dev:web": "http-server ./src -p 1420 -c-1",
+    "dev:desktop": "npm run tauri -- dev",
     "tauri": "tauri",
-    "test:e2e": "node --test tests/e2e-delete-ui.test.mjs"
+    "test": "npm run test:unit && npm run test:ui && npm run test:rust",
+    "test:unit": "node --test tests/i18n.test.mjs tests/theme.test.mjs",
+    "test:ui": "node --test tests/e2e-delete-ui.test.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

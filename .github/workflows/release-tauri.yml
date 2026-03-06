@@ -13,10 +13,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
-          - os: windows-latest
-          - os: macos-latest
-    runs-on: ${{ matrix.os }}
+          - platform: ubuntu-22.04
+            args: ""
+            uploadPlainBinary: false
+          - platform: windows-latest
+            args: ""
+            uploadPlainBinary: false
+          - platform: windows-latest
+            args: "--no-bundle"
+            uploadPlainBinary: true
+          - platform: macos-latest
+            args: ""
+            uploadPlainBinary: false
+    runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout
@@ -31,8 +40,13 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -45,6 +59,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Print GitHub runtime vars
+        shell: bash
+        run: |
+          echo "GITHUB_SERVER_URL=$GITHUB_SERVER_URL"
+          echo "GITHUB_API_URL=$GITHUB_API_URL"
+          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+          echo "GITHUB_REF=$GITHUB_REF"
+
       - name: Build and publish release artifacts
         uses: tauri-apps/tauri-action@v0
         env:
@@ -55,3 +77,5 @@ jobs:
           releaseBody: "Automated release for ${{ github.ref_name }}"
           releaseDraft: false
           prerelease: false
+          args: ${{ matrix.args }}
+          uploadPlainBinary: ${{ matrix.uploadPlainBinary }}

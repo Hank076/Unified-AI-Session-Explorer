@@ -18,6 +18,11 @@ const CHAT_PREVIEW_LENGTH = 380;
 const SESSION_DELETE_UNDO_MS = 8000;
 const THEME_STORAGE_KEY = "claude_history_theme_mode";
 const LOCALE_STORAGE_KEY = "claude_history_locale";
+const ERROR_TRANSLATION_KEYS = {
+  NOT_FOUND: "error.NOT_FOUND",
+  READ_FAILED: "error.READ_FAILED",
+  PARSE_PARTIAL: "error.PARSE_PARTIAL",
+};
 
 const state = {
   projects: [],
@@ -29,17 +34,21 @@ const state = {
   timelineItems: [],
   parseErrors: [],
   parseErrorCode: "",
-  hideSystemEvents: false,
+  hideSystemEvents: true,
+  hideToolEvents: true,
+  hideThinkingEvents: true,
   timelineSearchQuery: "",
   techViewState: {},
   entryExpandState: {},
   themeMode: "auto",
   resolvedTheme: "dark",
   locale: "en-US",
-  pendingSessionDelete: null,
+  pendingSessionDeletes: [],
   pendingSessionDeleteCandidate: null,
   pendingProjectDelete: null,
   pendingProjectPath: "",
+  undoToastAnimationFrameId: null,
+  ctxMenuTarget: null,
 };
 
 const refs = {
@@ -60,16 +69,15 @@ const refs = {
   viewerContent: null,
   status: null,
   hideSystemEventsToggle: null,
+  hideToolEventsToggle: null,
+  hideThinkingEventsToggle: null,
   hideSystemEventsWrap: null,
-  pathTooltip: null,
   themeButtons: [],
   localeSelect: null,
   aboutButton: null,
   aboutDialog: null,
   aboutCloseButton: null,
-  toast: null,
-  toastMessage: null,
-  toastUndoButton: null,
+  toastViewport: null,
   projectDeleteDialog: null,
   projectDeleteForm: null,
   projectDeleteImpact: null,
@@ -86,6 +94,10 @@ const refs = {
 
 function tt(key, params) {
   return t(state.locale, key, params);
+}
+
+function getSubagentToggleSymbol(expanded) {
+  return expanded ? "▾" : "▸";
 }
 
 function applyStaticTranslations() {
@@ -108,23 +120,34 @@ function setStatus(message, type = "info") {
 }
 
 function formatError(code) {
-  if (code === "NOT_FOUND") return tt("error.NOT_FOUND");
-  if (code === "READ_FAILED") return tt("error.READ_FAILED");
-  if (code === "PARSE_PARTIAL") return tt("error.PARSE_PARTIAL");
+  const translationKey = ERROR_TRANSLATION_KEYS[code];
+  if (translationKey) return tt(translationKey);
   return tt("error.unknown", { code });
+}
+
+function setErrorStatus(errorCode) {
+  setStatus(formatError(String(errorCode)), "error");
+}
+
+function setInfoStatus(key, params = {}) {
+  setStatus(tt(key, params), "info");
+}
+
+function resetViewerSearchQuery() {
+  state.timelineSearchQuery = "";
+  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
 }
 
 function clearViewer() {
   state.timelineItems = [];
   state.parseErrors = [];
   state.parseErrorCode = "";
-  state.timelineSearchQuery = "";
+  resetViewerSearchQuery();
   state.techViewState = {};
   refs.viewerTitle.textContent = tt("panel.viewer");
   renderViewerMeta("", "");
   setStatus("");
   setViewerSearchVisible(false);
-  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
   setHideSystemEventsVisible(true);
   refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt("placeholder.select"))}</p>`;
 }
@@ -217,22 +240,34 @@ function doesProjectMatchSearch(project, query) {
   );
 }
 
+function updateInputTexts(input, placeholderKey, ariaLabelKey) {
+  if (!input) return;
+  input.placeholder = tt(placeholderKey);
+  input.setAttribute("aria-label", tt(ariaLabelKey));
+}
+
 function updateProjectSearchTexts() {
-  if (!refs.projectsSearchInput) return;
-  refs.projectsSearchInput.placeholder = tt("project.searchPlaceholder");
-  refs.projectsSearchInput.setAttribute("aria-label", tt("project.searchAria"));
+  updateInputTexts(
+    refs.projectsSearchInput,
+    "project.searchPlaceholder",
+    "project.searchAria",
+  );
 }
 
 function updateViewerSearchTexts() {
-  if (!refs.viewerSearchInput) return;
-  refs.viewerSearchInput.placeholder = tt("viewer.searchPlaceholder");
-  refs.viewerSearchInput.setAttribute("aria-label", tt("viewer.searchAria"));
+  updateInputTexts(
+    refs.viewerSearchInput,
+    "viewer.searchPlaceholder",
+    "viewer.searchAria",
+  );
 }
 
 function updateProjectDeleteTexts() {
-  if (!refs.projectDeleteInput) return;
-  refs.projectDeleteInput.placeholder = tt("project.delete.inputPlaceholder");
-  refs.projectDeleteInput.setAttribute("aria-label", tt("project.delete.inputLabel"));
+  updateInputTexts(
+    refs.projectDeleteInput,
+    "project.delete.inputPlaceholder",
+    "project.delete.inputLabel",
+  );
 }
 
 function getSystemPrefersDark() {
@@ -243,24 +278,40 @@ function getSystemPrefersDark() {
   }
 }
 
-function readThemeMode() {
+function safeStorageGet(key) {
   try {
-    return getStoredThemeMode(localStorage.getItem(THEME_STORAGE_KEY));
+    return localStorage.getItem(key);
   } catch {
-    return "auto";
+    return null;
   }
 }
 
-function saveThemeMode(mode) {
+function safeStorageSet(key, value) {
   try {
-    if (mode === "auto") {
-      localStorage.removeItem(THEME_STORAGE_KEY);
-    } else {
-      localStorage.setItem(THEME_STORAGE_KEY, mode);
-    }
+    localStorage.setItem(key, value);
   } catch {
     // Ignore storage errors and keep runtime-only setting.
   }
+}
+
+function safeStorageRemove(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage errors and keep runtime-only setting.
+  }
+}
+
+function readThemeMode() {
+  return getStoredThemeMode(safeStorageGet(THEME_STORAGE_KEY));
+}
+
+function saveThemeMode(mode) {
+  if (mode === "auto") {
+    safeStorageRemove(THEME_STORAGE_KEY);
+    return;
+  }
+  safeStorageSet(THEME_STORAGE_KEY, mode);
 }
 
 function updateThemeButtons() {
@@ -314,21 +365,13 @@ function initThemeMode() {
 }
 
 function readLocale() {
-  try {
-    const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
-    if (saved) return getStoredLocale(saved);
-  } catch {
-    // Ignore storage errors and use runtime locale.
-  }
+  const saved = safeStorageGet(LOCALE_STORAGE_KEY);
+  if (saved) return getStoredLocale(saved);
   return detectLocale(navigator.language);
 }
 
 function saveLocale(locale) {
-  try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  } catch {
-    // Ignore storage errors and keep runtime-only setting.
-  }
+  safeStorageSet(LOCALE_STORAGE_KEY, locale);
 }
 
 function setLocale(locale, { persist = true } = {}) {
@@ -363,62 +406,32 @@ function isMarkdownPath(path) {
   return /\.md$/i.test(String(path || "").trim());
 }
 
-function bindPathHover(element, text, options = {}) {
-  if (!element || !refs.pathTooltip) return;
-  const displayPath = String(text || "");
-  const delayMs = Number.isFinite(options.delayMs) ? options.delayMs : 0;
-  let timerId = null;
-
-  const showNow = (event) => {
-    refs.pathTooltip.hidden = false;
-    refs.pathTooltip.textContent = displayPath;
-    move(event);
-  };
-  const show = (event) => {
-    if (timerId) window.clearTimeout(timerId);
-    if (delayMs <= 0) {
-      showNow(event);
-      return;
-    }
-    timerId = window.setTimeout(() => {
-      showNow(event);
-      timerId = null;
-    }, delayMs);
-  };
-  const hide = () => {
-    if (timerId) {
-      window.clearTimeout(timerId);
-      timerId = null;
-    }
-    refs.pathTooltip.hidden = true;
-  };
-  const move = (event) => {
-    if (!event || refs.pathTooltip.hidden) return;
-    const offset = 14;
-    refs.pathTooltip.style.left = `${event.clientX + offset}px`;
-    refs.pathTooltip.style.top = `${event.clientY + offset}px`;
-  };
-
-  element.addEventListener("mouseenter", show);
-  element.addEventListener("mousemove", move);
-  element.addEventListener("mouseleave", hide);
-  element.addEventListener("blur", hide);
-}
-
 function setHideSystemEventsVisible(visible) {
-  if (!refs.hideSystemEventsWrap || !refs.hideSystemEventsToggle) return;
+  if (
+    !refs.hideSystemEventsWrap ||
+    !refs.hideSystemEventsToggle ||
+    !refs.hideToolEventsToggle ||
+    !refs.hideThinkingEventsToggle
+  ) {
+    return;
+  }
   refs.hideSystemEventsWrap.style.visibility = visible ? "visible" : "hidden";
   refs.hideSystemEventsWrap.style.pointerEvents = visible ? "auto" : "none";
   refs.hideSystemEventsToggle.disabled = !visible;
+  refs.hideToolEventsToggle.disabled = !visible;
+  refs.hideThinkingEventsToggle.disabled = !visible;
   refs.hideSystemEventsWrap.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
-function updateHideSystemEventsToggle() {
-  if (!refs.hideSystemEventsToggle) return;
-  refs.hideSystemEventsToggle.setAttribute(
-    "aria-pressed",
-    state.hideSystemEvents ? "true" : "false",
-  );
+function updateTogglePressed(button, active) {
+  if (!button) return;
+  button.setAttribute("aria-pressed", active ? "true" : "false");
+}
+
+function updateEventFilterToggles() {
+  updateTogglePressed(refs.hideSystemEventsToggle, state.hideSystemEvents);
+  updateTogglePressed(refs.hideToolEventsToggle, state.hideToolEvents);
+  updateTogglePressed(refs.hideThinkingEventsToggle, state.hideThinkingEvents);
 }
 
 function setViewerSearchVisible(visible) {
@@ -427,30 +440,95 @@ function setViewerSearchVisible(visible) {
   refs.viewerSearchWrap.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
-function createTrashIcon() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-  svg.classList.add("row-action-icon");
+// ── Context Menu ─────────────────────────────────────────
+function hideContextMenu() {
+  const menu = refs.ctxMenu;
+  if (!menu) return;
+  menu.hidden = true;
+  menu.setAttribute("aria-hidden", "true");
+  menu.replaceChildren();
+  state.ctxMenuTarget = null;
+}
 
-  const addPath = (d) => {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", d);
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke", "currentColor");
-    path.setAttribute("stroke-width", "1.8");
-    path.setAttribute("stroke-linecap", "round");
-    path.setAttribute("stroke-linejoin", "round");
-    svg.appendChild(path);
-  };
+function showContextMenu(x, y, items) {
+  const menu = refs.ctxMenu;
+  if (!menu) return;
 
-  addPath("M4 7h16");
-  addPath("M9.5 3.5h5");
-  addPath("M7.5 7l.7 11.2a1 1 0 0 0 1 .8h5.6a1 1 0 0 0 1-.8L16.5 7");
-  addPath("M10 10.5v5.5");
-  addPath("M14 10.5v5.5");
-  return svg;
+  menu.replaceChildren();
+  for (const { label, onClick, kind } of items) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ctx-menu-item" + (kind === "danger" ? " ctx-menu-item--danger" : "");
+    btn.setAttribute("role", "menuitem");
+    btn.textContent = label;
+    btn.addEventListener("click", async () => {
+      hideContextMenu();
+      try {
+        await onClick();
+      } catch (err) {
+        console.error("ctx-menu action failed", err);
+      }
+    });
+    menu.appendChild(btn);
+  }
+
+  // Position with viewport overflow guard
+  menu.hidden = false;
+  menu.removeAttribute("aria-hidden");
+  const menuW = menu.offsetWidth;
+  const menuH = menu.offsetHeight;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  menu.style.left = `${x + menuW > vw ? Math.max(0, vw - menuW - 8) : x}px`;
+  menu.style.top = `${y + menuH > vh ? Math.max(0, y - menuH) : y}px`;
+
+  const firstItem = menu.querySelector(".ctx-menu-item");
+  if (firstItem) firstItem.focus();
+}
+
+function openProjectContextMenu(event, project) {
+  event.preventDefault();
+  state.ctxMenuTarget = event.currentTarget;
+  showContextMenu(event.clientX, event.clientY, [
+    {
+      label: tt("action.openFolder"),
+      onClick: () => {
+        void window.__TAURI__.opener.openPath(project.cwdPath || project.path);
+      },
+    },
+    {
+      label: tt("action.deleteProject"),
+      kind: "danger",
+      onClick: () => {
+        void openProjectDeleteDialog(project);
+      },
+    },
+  ]);
+}
+
+function openEntryContextMenu(event, entry) {
+  event.preventDefault();
+  state.ctxMenuTarget = event.currentTarget;
+  showContextMenu(event.clientX, event.clientY, [
+    {
+      label: tt("action.copySessionId"),
+      onClick: async () => {
+        const sessionId = String(entry.path ?? "")
+          .split(/[\\/]/)
+          .pop()
+          .replace(/\.[^.]+$/, "");
+        await navigator.clipboard.writeText(sessionId);
+        setInfoStatus("status.sessionIdCopied");
+      },
+    },
+    {
+      label: tt("action.deleteConversation"),
+      kind: "danger",
+      onClick: () => {
+        openSessionDeleteDialog(entry);
+      },
+    },
+  ]);
 }
 
 function createActionWrap(...buttons) {
@@ -461,58 +539,227 @@ function createActionWrap(...buttons) {
   return wrap;
 }
 
-function createIconActionButton({ ariaLabel, onClick, title = "", kind = "danger", icon = null }) {
-  const button = document.createElement("button");
-  button.className = `row-action-btn row-action-btn--${kind}`;
-  button.type = "button";
-  button.title = title || ariaLabel;
-  button.setAttribute("aria-label", ariaLabel);
-  if (icon) button.appendChild(icon);
-  button.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onClick();
+function getUndoToastItems() {
+  const now = Date.now();
+  const sessionItems = state.pendingSessionDeletes.map((pending) => {
+    const remainingMs = Math.max(0, (pending.expiresAt || now) - now);
+    const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+    return ({
+    id: pending.path,
+    kind: "session",
+    label: tt("undoToast.sessionLabel"),
+    message: tt("session.delete.toast", {
+      name: pending.label,
+      seconds: remainingSeconds,
+    }),
+    meta: `${remainingSeconds}s`,
+    progress: Math.max(
+      0,
+      Math.min(100, (remainingMs / Math.max(1, pending.totalMs || 1)) * 100),
+    ),
+    remainingSeconds,
+    onUndo: () => {
+      cancelPendingSessionDelete(pending, {
+        refreshEntries: true,
+        showCancelledStatus: true,
+      });
+    },
+    createdAt: pending.createdAt,
+    });
   });
-  return button;
+
+  const projectItem = state.pendingProjectDelete
+    ? [{
+        id: state.pendingProjectDelete.projectPath,
+        kind: "project",
+        label: tt("undoToast.projectLabel"),
+        get remainingMs() {
+          return Math.max(0, (state.pendingProjectDelete.expiresAt || now) - now);
+        },
+      }]
+        .map((pendingItem) => {
+          const remainingMs = pendingItem.remainingMs;
+          const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+          return {
+        id: state.pendingProjectDelete.projectPath,
+        kind: "project",
+        label: tt("undoToast.projectLabel"),
+        message: tt("project.delete.toast", {
+          name: state.pendingProjectDelete.projectName,
+          seconds: remainingSeconds,
+        }),
+        meta: `${remainingSeconds}s`,
+        progress: Math.max(
+          0,
+          Math.min(
+            100,
+            (remainingMs / Math.max(1, state.pendingProjectDelete.totalMs || 1)) * 100,
+          ),
+        ),
+        remainingSeconds,
+        onUndo: () => {
+          cancelPendingProjectDelete({ showCancelledStatus: true });
+        },
+        createdAt: state.pendingProjectDelete.createdAt,
+          };
+        })
+    : [];
+
+  return [...sessionItems, ...projectItem].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-function showUndoToast(message, onUndo) {
-  if (!refs.toast || !refs.toastMessage || !refs.toastUndoButton) return;
-  refs.toastMessage.textContent = message;
-  refs.toast.hidden = false;
-  refs.toastUndoButton.onclick = () => {
-    onUndo();
+function syncUndoToastAnimation() {
+  const hasPending = state.pendingSessionDeletes.length > 0 || Boolean(state.pendingProjectDelete);
+  const cancelFrame =
+    window.cancelAnimationFrame?.bind(window) ||
+    ((frameId) => window.clearTimeout(frameId));
+  if (!hasPending) {
+    if (state.undoToastAnimationFrameId) {
+      cancelFrame(state.undoToastAnimationFrameId);
+      state.undoToastAnimationFrameId = null;
+    }
+    return;
+  }
+  if (state.undoToastAnimationFrameId) return;
+
+  const tick = () => {
+    state.undoToastAnimationFrameId = null;
+    updateUndoToastVisuals();
+    syncUndoToastAnimation();
   };
+  state.undoToastAnimationFrameId = window.requestAnimationFrame(tick);
 }
 
-function hideUndoToast() {
-  if (!refs.toast || !refs.toastMessage || !refs.toastUndoButton) return;
-  refs.toast.hidden = true;
-  refs.toastMessage.textContent = "";
-  refs.toastUndoButton.onclick = null;
+function updateUndoToastVisuals() {
+  if (!refs.toastViewport || refs.toastViewport.hidden) return;
+  const items = getUndoToastItems();
+  for (const item of items) {
+    const toast = [...refs.toastViewport.children].find((node) => node.dataset.pendingId === item.id);
+    if (!toast) continue;
+    toast.style.setProperty("--undo-progress", `${item.progress}%`);
+
+    const message = toast.querySelector(".undo-toast__message");
+    const meta = toast.querySelector(".undo-toast__meta");
+    if (message) message.textContent = item.message;
+    if (meta) meta.textContent = item.meta;
+  }
+}
+
+function renderUndoToasts() {
+  if (!refs.toastViewport) return;
+  refs.toastViewport.replaceChildren();
+
+  const items = getUndoToastItems();
+  refs.toastViewport.hidden = items.length === 0;
+  if (items.length === 0) {
+    syncUndoToastAnimation();
+    return;
+  }
+
+  for (const item of items) {
+    const toast = createElement("article", "undo-toast");
+    toast.dataset.kind = item.kind;
+    toast.dataset.pendingId = item.id;
+    toast.style.setProperty("--undo-progress", `${item.progress}%`);
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-atomic", "true");
+
+    const body = createElement("div", "undo-toast__body");
+    const eyebrow = createElement("div", "undo-toast__eyebrow", item.label);
+    const message = createElement("p", "undo-toast__message", item.message);
+    const meta = createElement("div", "undo-toast__meta", item.meta);
+    body.append(eyebrow, message, meta);
+
+    const undoButton = createElement("button", "undo-toast-btn", tt("action.undo"));
+    undoButton.type = "button";
+    undoButton.addEventListener("click", item.onUndo);
+
+    toast.append(body, undoButton);
+    refs.toastViewport.appendChild(toast);
+  }
+  syncUndoToastAnimation();
+}
+
+function clearPendingTimers(pending) {
+  if (!pending) return;
+  if (pending.timerId) {
+    window.clearTimeout(pending.timerId);
+    pending.timerId = null;
+  }
+  if (pending.countdownIntervalId) {
+    window.clearInterval(pending.countdownIntervalId);
+    pending.countdownIntervalId = null;
+  }
 }
 
 function clearPendingSessionTimers(pending) {
-  if (!pending) return;
-  if (pending.timerId) {
-    window.clearTimeout(pending.timerId);
-    pending.timerId = null;
-  }
-  if (pending.countdownIntervalId) {
-    window.clearInterval(pending.countdownIntervalId);
-    pending.countdownIntervalId = null;
-  }
+  clearPendingTimers(pending);
 }
 
 function clearPendingProjectTimers(pending) {
-  if (!pending) return;
-  if (pending.timerId) {
-    window.clearTimeout(pending.timerId);
-    pending.timerId = null;
+  clearPendingTimers(pending);
+}
+
+function getPendingSessionHiddenPaths() {
+  const hiddenPaths = new Set();
+  for (const pending of state.pendingSessionDeletes) {
+    hiddenPaths.add(pending.path);
+    for (const path of pending.hiddenPaths || []) {
+      hiddenPaths.add(path);
+    }
   }
-  if (pending.countdownIntervalId) {
-    window.clearInterval(pending.countdownIntervalId);
-    pending.countdownIntervalId = null;
+  return hiddenPaths;
+}
+
+function applyPendingEntryFilters(entries) {
+  const hiddenPaths = getPendingSessionHiddenPaths();
+  if (hiddenPaths.size === 0) return entries;
+  return entries.filter((entry) => !hiddenPaths.has(entry.path));
+}
+
+function cancelPendingProjectDelete({ showCancelledStatus = false } = {}) {
+  const pendingProject = state.pendingProjectDelete;
+  if (!pendingProject) return;
+  clearPendingProjectTimers(pendingProject);
+  state.pendingProjectDelete = null;
+  renderUndoToasts();
+  if (showCancelledStatus) {
+    setInfoStatus("status.deleteCancelled");
+  }
+}
+
+function cancelPendingSessionDelete(
+  pending = null,
+  {
+  executeNow = false,
+  refreshEntries = false,
+  showCancelledStatus = false,
+  } = {},
+) {
+  const pendingSessions = pending
+    ? state.pendingSessionDeletes.filter((item) => item === pending)
+    : [...state.pendingSessionDeletes];
+  if (pendingSessions.length === 0) return;
+
+  for (const pendingSession of pendingSessions) {
+    clearPendingSessionTimers(pendingSession);
+  }
+  state.pendingSessionDeletes = state.pendingSessionDeletes.filter(
+    (item) => !pendingSessions.includes(item),
+  );
+  renderUndoToasts();
+
+  if (executeNow) {
+    for (const pendingSession of pendingSessions) {
+      void executeSessionDelete(pendingSession);
+    }
+    return;
+  }
+  if (refreshEntries) {
+    void refreshEntriesForSelectedProject();
+  }
+  if (showCancelledStatus) {
+    setInfoStatus("status.deleteCancelled");
   }
 }
 
@@ -522,18 +769,33 @@ async function refreshEntriesForSelectedProject() {
     renderEntries();
     return;
   }
-  state.entries = await invoke("list_project_entries", {
+  const entries = await invoke("list_project_entries", {
     projectPath: state.selectedProjectPath,
   });
+  state.entries = applyPendingEntryFilters(entries);
   renderEntries();
+}
+
+async function refreshEntriesIfProjectSelected(projectPath) {
+  if (projectPath !== state.selectedProjectPath) return;
+  await refreshEntriesForSelectedProject();
+}
+
+function clearSelectedEntryState() {
+  state.selectedEntryPath = "";
+  state.selectedEntryType = "";
+  clearViewer();
 }
 
 function clearSelectedEntryIfMatchesPaths(paths) {
   if (!state.selectedEntryPath) return;
   if (!paths.includes(state.selectedEntryPath)) return;
-  state.selectedEntryPath = "";
-  state.selectedEntryType = "";
-  clearViewer();
+  clearSelectedEntryState();
+}
+
+function closeDialogIfOpen(dialog) {
+  if (!dialog) return;
+  if (dialog.open) dialog.close();
 }
 
 function openSessionDeleteDialog(entry) {
@@ -546,8 +808,7 @@ function openSessionDeleteDialog(entry) {
 }
 
 function closeSessionDeleteDialog() {
-  if (!refs.sessionDeleteDialog) return;
-  if (refs.sessionDeleteDialog.open) refs.sessionDeleteDialog.close();
+  closeDialogIfOpen(refs.sessionDeleteDialog);
   state.pendingSessionDeleteCandidate = null;
 }
 
@@ -557,8 +818,7 @@ function openAboutDialog() {
 }
 
 function closeAboutDialog() {
-  if (!refs.aboutDialog) return;
-  if (refs.aboutDialog.open) refs.aboutDialog.close();
+  closeDialogIfOpen(refs.aboutDialog);
 }
 
 function confirmSessionDelete() {
@@ -572,21 +832,7 @@ function queueSessionDelete(entry) {
   const isSession = entry.entryType === "session";
   if (!isSession && entry.entryType !== "subagent_session") return;
 
-  const pendingProject = state.pendingProjectDelete;
-  if (pendingProject) {
-    clearPendingProjectTimers(pendingProject);
-    state.pendingProjectDelete = null;
-    hideUndoToast();
-    setStatus(tt("status.deleteCancelled"), "info");
-  }
-
-  const previousPending = state.pendingSessionDelete;
-  if (previousPending?.timerId) {
-    clearPendingSessionTimers(previousPending);
-    hideUndoToast();
-    state.pendingSessionDelete = null;
-    void executeSessionDelete(previousPending);
-  }
+  cancelPendingProjectDelete({ showCancelledStatus: true });
 
   const removedPaths = [entry.path];
   if (isSession) {
@@ -603,74 +849,54 @@ function queueSessionDelete(entry) {
 
   const pending = {
     path: entry.path,
+    label: String(entry.label || ""),
     projectPath: state.selectedProjectPath,
+    hiddenPaths: removedPaths,
     timerId: null,
     countdownIntervalId: null,
-    remainingSeconds: Math.floor(SESSION_DELETE_UNDO_MS / 1000),
+    totalMs: SESSION_DELETE_UNDO_MS,
+    expiresAt: Date.now() + SESSION_DELETE_UNDO_MS,
+    createdAt: Date.now(),
   };
-  const updateToastCountdown = () => {
-    showUndoToast(
-      tt("session.delete.toast", { seconds: pending.remainingSeconds }),
-      () => {
-        clearPendingSessionTimers(pending);
-        if (state.pendingSessionDelete === pending) state.pendingSessionDelete = null;
-        hideUndoToast();
-        void refreshEntriesForSelectedProject();
-        setStatus(tt("status.deleteCancelled"), "info");
-      },
-    );
-  };
-
-  updateToastCountdown();
-  pending.countdownIntervalId = window.setInterval(() => {
-    if (pending.remainingSeconds <= 1) {
-      window.clearInterval(pending.countdownIntervalId);
-      pending.countdownIntervalId = null;
-      return;
-    }
-    pending.remainingSeconds -= 1;
-    updateToastCountdown();
-  }, 1000);
-
   pending.timerId = window.setTimeout(() => {
     void executeSessionDelete(pending);
   }, SESSION_DELETE_UNDO_MS);
-  state.pendingSessionDelete = pending;
+  state.pendingSessionDeletes = [...state.pendingSessionDeletes, pending];
+  renderUndoToasts();
 }
 
 async function executeSessionDelete(pending) {
   if (!pending) return;
   clearPendingSessionTimers(pending);
-  if (state.pendingSessionDelete === pending) state.pendingSessionDelete = null;
-  hideUndoToast();
+  state.pendingSessionDeletes = state.pendingSessionDeletes.filter((item) => item !== pending);
+  renderUndoToasts();
   try {
     await invoke("delete_session", { sessionPath: pending.path });
-    if (pending.projectPath === state.selectedProjectPath) {
-      await refreshEntriesForSelectedProject();
-    }
-    setStatus(tt("status.sessionDeleted"), "info");
+    await refreshEntriesIfProjectSelected(pending.projectPath);
+    setInfoStatus("status.sessionDeleted");
   } catch (errorCode) {
-    if (pending.projectPath === state.selectedProjectPath) {
-      await refreshEntriesForSelectedProject();
-    }
-    setStatus(formatError(String(errorCode)), "error");
+    await refreshEntriesIfProjectSelected(pending.projectPath);
+    setErrorStatus(errorCode);
   }
 }
 
 function updateProjectDeleteConfirmState() {
   if (!refs.projectDeleteInput || !refs.projectDeleteConfirmButton) return;
-  const project = findSelectedProject() || state.projects.find((item) => item.path === state.pendingProjectPath);
+  const selectedProject = findSelectedProject();
+  const pendingProject = state.projects.find((item) => item.path === state.pendingProjectPath);
+  const project = selectedProject || pendingProject;
   const expectedName = project ? getProjectDisplayName(project) : "";
   const currentValue = String(refs.projectDeleteInput.value || "").trim();
   refs.projectDeleteConfirmButton.disabled = !expectedName || currentValue !== expectedName;
 }
 
 function formatProjectDeleteImpactSummary(impact) {
-  const sessionCount = Number(impact?.sessionCount || 0);
-  const subagentCount = Number(impact?.subagentSessionCount || 0);
-  const memoryCount = Number(impact?.memoryFileCount || 0);
-  const totalCount = Number(impact?.totalFileCount || 0);
-  const totalSize = formatBytes(Number(impact?.totalSizeBytes || 0));
+  const readImpactCount = (key) => Number(impact?.[key] || 0);
+  const sessionCount = readImpactCount("sessionCount");
+  const subagentCount = readImpactCount("subagentSessionCount");
+  const memoryCount = readImpactCount("memoryFileCount");
+  const totalCount = readImpactCount("totalFileCount");
+  const totalSize = formatBytes(readImpactCount("totalSizeBytes"));
   return tt("project.delete.impactSummary", {
     sessionCount,
     subagentCount,
@@ -707,8 +933,7 @@ async function openProjectDeleteDialog(project) {
 }
 
 function closeProjectDeleteDialog() {
-  if (!refs.projectDeleteDialog) return;
-  if (refs.projectDeleteDialog.open) refs.projectDeleteDialog.close();
+  closeDialogIfOpen(refs.projectDeleteDialog);
   if (refs.projectDeleteImpact) refs.projectDeleteImpact.textContent = "";
   state.pendingProjectPath = "";
 }
@@ -727,65 +952,30 @@ function queueProjectDelete(projectPath) {
     return;
   }
 
-  const pendingSession = state.pendingSessionDelete;
-  if (pendingSession) {
-    clearPendingSessionTimers(pendingSession);
-    state.pendingSessionDelete = null;
-    hideUndoToast();
-    void refreshEntriesForSelectedProject();
-  }
-
-  const previousPending = state.pendingProjectDelete;
-  if (previousPending) {
-    clearPendingProjectTimers(previousPending);
-    hideUndoToast();
-    state.pendingProjectDelete = null;
-  }
+  cancelPendingSessionDelete(null, { refreshEntries: true });
+  cancelPendingProjectDelete();
 
   const pending = {
     projectPath,
     projectName: getProjectDisplayName(project),
     timerId: null,
     countdownIntervalId: null,
-    remainingSeconds: Math.floor(SESSION_DELETE_UNDO_MS / 1000),
+    totalMs: SESSION_DELETE_UNDO_MS,
+    expiresAt: Date.now() + SESSION_DELETE_UNDO_MS,
+    createdAt: Date.now(),
   };
-
-  const updateToastCountdown = () => {
-    showUndoToast(
-      tt("project.delete.toast", {
-        name: pending.projectName,
-        seconds: pending.remainingSeconds,
-      }),
-      () => {
-        clearPendingProjectTimers(pending);
-        if (state.pendingProjectDelete === pending) state.pendingProjectDelete = null;
-        hideUndoToast();
-        setStatus(tt("status.deleteCancelled"), "info");
-      },
-    );
-  };
-
-  updateToastCountdown();
-  pending.countdownIntervalId = window.setInterval(() => {
-    if (pending.remainingSeconds <= 1) {
-      window.clearInterval(pending.countdownIntervalId);
-      pending.countdownIntervalId = null;
-      return;
-    }
-    pending.remainingSeconds -= 1;
-    updateToastCountdown();
-  }, 1000);
   pending.timerId = window.setTimeout(() => {
     void executeProjectDelete(pending);
   }, SESSION_DELETE_UNDO_MS);
   state.pendingProjectDelete = pending;
+  renderUndoToasts();
 }
 
 async function executeProjectDelete(pending) {
   if (!pending) return;
   clearPendingProjectTimers(pending);
   if (state.pendingProjectDelete === pending) state.pendingProjectDelete = null;
-  hideUndoToast();
+  renderUndoToasts();
   try {
     await invoke("delete_project", { projectPath: pending.projectPath });
     const wasSelected = state.selectedProjectPath === pending.projectPath;
@@ -793,15 +983,13 @@ async function executeProjectDelete(pending) {
     renderProjects();
     if (wasSelected) {
       state.selectedProjectPath = "";
-      state.selectedEntryPath = "";
-      state.selectedEntryType = "";
+      clearSelectedEntryState();
       state.entries = [];
       renderEntries();
-      clearViewer();
     }
-    setStatus(tt("status.projectDeleted"), "info");
+    setInfoStatus("status.projectDeleted");
   } catch (errorCode) {
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
@@ -823,22 +1011,11 @@ function renderProjects() {
     const nameNode = createElement("div", "project-name", displayName);
     const pathNode = createElement("div", "project-path", displayPath);
     button.append(nameNode, pathNode);
-    bindPathHover(button, fullPath, { delayMs: 1600 });
+    button.title = fullPath;
     button.addEventListener("click", () => selectProject(project.path));
     const row = createElement("div", "list-row");
     row.append(button);
-    row.append(
-      createActionWrap(
-        createIconActionButton({
-          ariaLabel: tt("aria.deleteProject", { name: displayName }),
-          onClick: () => {
-            void openProjectDeleteDialog(project);
-          },
-          kind: "danger",
-          icon: createTrashIcon(),
-        }),
-      ),
-    );
+    row.addEventListener("contextmenu", (e) => openProjectContextMenu(e, project));
     li.appendChild(row);
     refs.projectsList.appendChild(li);
   }
@@ -910,6 +1087,13 @@ function formatMetaDay(value) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function extractHeaderModelLabel(raw) {
+  const message = raw?.message && typeof raw.message === "object" ? raw.message : null;
+  const modelCandidate = message?.model ?? raw?.model ?? message?.model_name ?? raw?.model_name;
+  const model = String(modelCandidate || "").trim();
+  return model ? `model:${model}` : "";
+}
+
 function renderViewerMeta(pathText, rightText = "") {
   if (refs.viewerMetaPath) refs.viewerMetaPath.textContent = String(pathText || "");
   if (refs.viewerMetaTime) refs.viewerMetaTime.textContent = String(rightText || "");
@@ -925,7 +1109,9 @@ function renderEntries() {
       if (aIsMain !== bIsMain) return aIsMain ? -1 : 1;
       return String(a.label || "").localeCompare(String(b.label || ""), "zh-TW");
     });
-  const sessionEntries = state.entries.filter((entry) => entry.entryType === "session");
+  const sessionEntries = state.entries
+    .filter((entry) => entry.entryType === "session")
+    .sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0));
   const subagentsByParent = new Map();
 
   for (const entry of state.entries) {
@@ -934,6 +1120,10 @@ function renderEntries() {
       subagentsByParent.set(entry.parentSession, []);
     }
     subagentsByParent.get(entry.parentSession).push(entry);
+  }
+
+  for (const [parent, children] of subagentsByParent.entries()) {
+    children.sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0));
   }
 
   if (memoryEntries.length > 0) {
@@ -974,10 +1164,13 @@ function renderEntries() {
 
     let toggle = null;
     if (hasChildren) {
-      toggle = createElement("button", "entry-toggle", expanded ? "▾" : "▸");
+      toggle = createElement("button", "entry-toggle row-action-btn", getSubagentToggleSymbol(expanded));
       toggle.type = "button";
       toggle.title = expanded ? tt("action.collapseSubagent") : tt("action.expandSubagent");
-      toggle.setAttribute("aria-label", toggle.title);
+      toggle.setAttribute("aria-label", `${toggle.title} · ${tt("entry.subagentToggleLabel")}`);
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      toggle.dataset.expanded = expanded ? "true" : "false";
+      toggle.dataset.label = tt("entry.subagentToggleLabel");
       toggle.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -986,17 +1179,8 @@ function renderEntries() {
       });
     }
 
-    row.append(
-      createActionWrap(
-        toggle,
-        createIconActionButton({
-          ariaLabel: tt("aria.deleteConversation", { name: String(entry.label || "") }),
-          onClick: () => openSessionDeleteDialog(entry),
-          kind: "danger",
-          icon: createTrashIcon(),
-        }),
-      ),
-    );
+    if (toggle) row.append(createActionWrap(toggle));
+    row.addEventListener("contextmenu", (e) => openEntryContextMenu(e, entry));
     li.appendChild(row);
     refs.entriesList.appendChild(li);
 
@@ -1011,16 +1195,7 @@ function renderEntries() {
           isSubagent: true,
         }),
       );
-      childRow.append(
-        createActionWrap(
-          createIconActionButton({
-            ariaLabel: tt("aria.deleteConversation", { name: String(child.label || "") }),
-            onClick: () => openSessionDeleteDialog(child),
-            kind: "danger",
-            icon: createTrashIcon(),
-          }),
-        ),
-      );
+      childRow.addEventListener("contextmenu", (e) => openEntryContextMenu(e, child));
       childLi.appendChild(childRow);
       refs.entriesList.appendChild(childLi);
     }
@@ -1106,7 +1281,7 @@ function createEntryButton(
   const secondary = createElement("div", "entry-secondary", secondaryParts.join(" · "));
   button.append(primary, secondary);
 
-  bindPathHover(button, entry.label, { delayMs: 1600 });
+  button.title = entry.label;
   if (state.selectedEntryPath === entry.path) button.dataset.active = "true";
   button.addEventListener("click", () => selectEntry(entry));
   return button;
@@ -1141,10 +1316,51 @@ function truncateText(text, limit = 380) {
 function extractCommandDisplay(text) {
   const source = String(text || "");
   const commandName = source.match(/<command-name>([\s\S]*?)<\/command-name>/i)?.[1]?.trim();
+  const commandMessage = source.match(/<command-message>([\s\S]*?)<\/command-message>/i)?.[1]?.trim();
   const commandArgs = source.match(/<command-args>([\s\S]*?)<\/command-args>/i)?.[1]?.trim();
-  const parts = [commandName, commandArgs].filter(Boolean);
+  const normalizedName = commandName || (commandMessage ? `/${commandMessage.replace(/^\/+/, "")}` : "");
+  const parts = [normalizedName, commandArgs].filter(Boolean);
   if (parts.length === 0) return null;
-  return parts.join(" ");
+  return `command: ${parts.join(" ")}`;
+}
+
+function extractXmlTagContent(source, tagName) {
+  const text = String(source || "");
+  if (!text.trim()) return "";
+  const matcher = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i");
+  const value = text.match(matcher)?.[1];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function extractLocalCommandStdout(raw) {
+  if (!raw || typeof raw !== "object") return "";
+  const candidates = [
+    raw["local-command-stdout"],
+    raw.localCommandStdout,
+    raw?.message?.["local-command-stdout"],
+    raw?.message?.localCommandStdout,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  const messageContent = raw?.message?.content;
+  if (typeof messageContent === "string") {
+    const tagged = extractXmlTagContent(messageContent, "local-command-stdout");
+    if (tagged) return tagged;
+  }
+  if (typeof raw?.content === "string") {
+    const tagged = extractXmlTagContent(raw.content, "local-command-stdout");
+    if (tagged) return tagged;
+  }
+  for (const item of normalizeContentItems(messageContent)) {
+    if (!item || typeof item !== "object") continue;
+    const text = typeof item.text === "string" ? item.text : typeof item.content === "string" ? item.content : "";
+    const tagged = extractXmlTagContent(text, "local-command-stdout");
+    if (tagged) return tagged;
+  }
+  return "";
 }
 
 function extractTextFromUnknown(value) {
@@ -1514,9 +1730,229 @@ function extractToolResultDetail(item, index = 1) {
   };
 }
 
+function stringifyCompact(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function joinDefinedParts(parts, separator = " · ") {
+  return parts
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(separator);
+}
+
+function buildToolUseResultDetail(toolUseResult) {
+  if (!toolUseResult || typeof toolUseResult !== "object") return null;
+  const commandNameRaw = String(toolUseResult.commandName || "").trim();
+  const commandName = commandNameRaw || "Unknown";
+  const lines = [];
+  const addLine = (label, value) => {
+    const text = stringifyCompact(value);
+    if (!text) return;
+    lines.push(`${label}: ${truncateText(text, 200)}`);
+  };
+  const addJoinedLine = (label, values) => {
+    if (!Array.isArray(values) || values.length === 0) return;
+    const text = values.map((v) => stringifyCompact(v)).filter(Boolean).join(", ");
+    if (!text) return;
+    lines.push(`${label}: ${truncateText(text, 220)}`);
+  };
+
+  if (/^superpowers:|^skills?:/i.test(commandName)) {
+    addLine("success", toolUseResult.success);
+    return {
+      toolName: "Skill",
+      title: `Skill · ${commandName}`,
+      lines: lines.length > 0 ? lines : [tt("tool.result.empty")],
+    };
+  }
+
+  switch (commandName) {
+    case "Bash":
+      addLine("stdout", toolUseResult.stdout);
+      addLine("stderr", toolUseResult.stderr);
+      addLine("interrupted", toolUseResult.interrupted);
+      addLine("isImage", toolUseResult.isImage);
+      addLine("noOutputExpected", toolUseResult.noOutputExpected);
+      break;
+    case "Read":
+      addLine("type", toolUseResult.type);
+      addLine("filePath", toolUseResult.file?.filePath);
+      addLine("startLine", toolUseResult.file?.startLine);
+      addLine("numLines", toolUseResult.file?.numLines);
+      addLine("totalLines", toolUseResult.file?.totalLines);
+      addLine("content", toolUseResult.file?.content);
+      break;
+    case "Glob":
+      addJoinedLine("filenames", toolUseResult.filenames);
+      addLine("numFiles", toolUseResult.numFiles);
+      addLine("durationMs", toolUseResult.durationMs);
+      addLine("truncated", toolUseResult.truncated);
+      break;
+    case "Grep":
+      addLine("numMatches", toolUseResult.numMatches);
+      addLine("durationMs", toolUseResult.durationMs);
+      addLine("truncated", toolUseResult.truncated);
+      if (Array.isArray(toolUseResult.matches)) {
+        for (const match of toolUseResult.matches.slice(0, 3)) {
+          const line = joinDefinedParts(
+            [match?.filePath, match?.line ? `L${match.line}` : "", match?.preview],
+            " | ",
+          );
+          if (line) lines.push(truncateText(line, 220));
+        }
+      }
+      break;
+    case "Edit":
+    case "Write":
+      addLine("success", toolUseResult.success);
+      addLine("filePath", toolUseResult.filePath);
+      addLine("replacements", toolUseResult.replacements);
+      addLine("bytesWritten", toolUseResult.bytesWritten);
+      break;
+    case "TaskCreate":
+      addLine("task.id", toolUseResult.task?.id);
+      addLine("task.subject", toolUseResult.task?.subject);
+      break;
+    case "TaskUpdate":
+      addLine("success", toolUseResult.success);
+      addLine("taskId", toolUseResult.taskId);
+      addJoinedLine("updatedFields", toolUseResult.updatedFields);
+      addLine(
+        "statusChange",
+        joinDefinedParts(
+          [toolUseResult.statusChange?.from, toolUseResult.statusChange?.to],
+          " -> ",
+        ),
+      );
+      break;
+    case "TaskList":
+      addLine("count", toolUseResult.count);
+      if (Array.isArray(toolUseResult.tasks)) {
+        for (const task of toolUseResult.tasks.slice(0, 3)) {
+          const line = joinDefinedParts(
+            [
+              task?.id ? `#${task.id}` : "",
+              task?.status ? `[${task.status}]` : "",
+              task?.subject,
+            ],
+            " ",
+          );
+          if (line) lines.push(truncateText(line, 220));
+        }
+      }
+      break;
+    case "TaskGet":
+      addLine("task.id", toolUseResult.task?.id);
+      addLine("task.status", toolUseResult.task?.status);
+      addLine("task.subject", toolUseResult.task?.subject);
+      break;
+    case "TaskOutput":
+      addLine("taskId", toolUseResult.taskId);
+      addLine("shellId", toolUseResult.shellId);
+      addLine("stdout", toolUseResult.stdout);
+      addLine("stderr", toolUseResult.stderr);
+      break;
+    case "AskUserQuestion":
+      if (Array.isArray(toolUseResult.questions)) {
+        for (const q of toolUseResult.questions.slice(0, 3)) {
+          addLine("question", q?.question);
+          if (Array.isArray(q?.options)) {
+            addJoinedLine(
+              "options",
+              q.options.map((opt) => opt?.label || opt),
+            );
+          }
+        }
+      }
+      addLine("answers", toolUseResult.answers);
+      addLine("annotations", toolUseResult.annotations);
+      break;
+    case "Agent":
+      addLine("taskId", toolUseResult.taskId);
+      addLine("status", toolUseResult.status);
+      addLine("summary", toolUseResult.summary);
+      addLine("durationMs", toolUseResult.durationMs);
+      addLine("usage", toolUseResult.usage);
+      break;
+    case "WebSearch":
+    case "WebFetch":
+    case "MCPSearch":
+      if (Array.isArray(toolUseResult.results)) {
+        addLine("count", toolUseResult.count ?? toolUseResult.results.length);
+        for (const result of toolUseResult.results.slice(0, 3)) {
+          const line = joinDefinedParts(
+            [result?.title, result?.url, result?.snippet, result?.status],
+            " | ",
+          );
+          if (line) lines.push(truncateText(line, 220));
+        }
+      } else {
+        addLine("results", toolUseResult.results);
+      }
+      break;
+    case "LSP":
+      addLine("method", toolUseResult.method);
+      addLine("result", toolUseResult.result);
+      break;
+    case "NotebookEdit":
+      addLine("success", toolUseResult.success);
+      addLine("notebookPath", toolUseResult.notebookPath);
+      addJoinedLine("updatedCells", toolUseResult.updatedCells);
+      break;
+    case "KillShell":
+      addLine("success", toolUseResult.success);
+      addLine("shellId", toolUseResult.shellId);
+      break;
+    case "ExitPlanMode":
+      addLine("success", toolUseResult.success);
+      addLine("reason", toolUseResult.reason);
+      break;
+    default:
+      addLine("success", toolUseResult.success);
+      addLine("commandName", commandNameRaw);
+      for (const [key, value] of Object.entries(toolUseResult)) {
+        if (key === "success" || key === "commandName") continue;
+        addLine(key, value);
+      }
+      break;
+  }
+
+  return {
+    toolName: commandName,
+    title: `toolUseResult · ${commandName}`,
+    lines: lines.length > 0 ? lines : [tt("tool.result.empty")],
+  };
+}
+
+function pushUniqueDetail(details, detail) {
+  if (!detail || typeof detail !== "object") return;
+  const signature = `${detail.title}::${Array.isArray(detail.lines) ? detail.lines.join("\n") : ""}`;
+  const existing = details.some((item) => {
+    const target = `${item.title}::${Array.isArray(item.lines) ? item.lines.join("\n") : ""}`;
+    return target === signature;
+  });
+  if (!existing) details.push(detail);
+}
+
 
 function extractChatOnlySummary(raw) {
   if (raw?.type === "tool_result") return "";
+
+  const toolUseResultDetail = buildToolUseResultDetail(raw?.toolUseResult);
+  if (toolUseResultDetail) {
+    return joinDefinedParts(
+      [toolUseResultDetail.title, ...(Array.isArray(toolUseResultDetail.lines) ? toolUseResultDetail.lines.slice(0, 2) : [])],
+      " | ",
+    );
+  }
 
   const message = raw?.message;
   const content = message?.content ?? message;
@@ -1534,7 +1970,9 @@ function extractChatOnlySummary(raw) {
     }
   }
 
-  return chunks.join("\n").trim();
+  const summary = chunks.join("\n").trim();
+  const commandDisplay = extractCommandDisplay(summary);
+  return commandDisplay || summary;
 }
 
 function extractToolTagNames(tags) {
@@ -1556,9 +1994,19 @@ function extractTextSummary(raw, resultsMap = null) {
   const thinkingDetails = [];
   const toolUseDetails = [];
   const toolResultDetails = [];
+  const toolUseResultDetail = buildToolUseResultDetail(raw?.toolUseResult);
 
   if (typeof content === "string" && content.trim()) {
     textChunks.push(content.trim());
+  }
+
+  if (toolUseResultDetail) {
+    tags.push("tool_result");
+    if (toolUseResultDetail.toolName) tags.push(`tool:${toolUseResultDetail.toolName}`);
+    pushUniqueDetail(toolResultDetails, {
+      title: toolUseResultDetail.title,
+      lines: toolUseResultDetail.lines,
+    });
   }
 
   const contentItems = normalizeContentItems(content);
@@ -1576,7 +2024,7 @@ function extractTextSummary(raw, resultsMap = null) {
     if (item.type === "tool_result") {
       tags.push("tool_result");
       const detail = extractToolResultDetail(item, toolResultDetails.length + 1);
-      if (detail) toolResultDetails.push(detail);
+      if (detail) pushUniqueDetail(toolResultDetails, detail);
     }
 
     if (item.type === "thinking") {
@@ -1596,7 +2044,7 @@ function extractTextSummary(raw, resultsMap = null) {
         const resultItem = resultsMap.get(item.id);
         if (resultItem) {
           const resDetail = extractToolResultDetail(resultItem, toolResultDetails.length + 1);
-          if (resDetail) toolResultDetails.push(resDetail);
+          if (resDetail) pushUniqueDetail(toolResultDetails, resDetail);
           if (!tags.includes("tool_result")) tags.push("tool_result");
         }
       }
@@ -1616,13 +2064,31 @@ function extractTextSummary(raw, resultsMap = null) {
   if (textChunks.length === 0 && raw?.type === "tool_result") {
     tags.push("tool_result");
     const detail = extractToolResultDetail({ type: "tool_result", content: raw?.content }, 1);
-    if (detail) toolResultDetails.push(detail);
+    if (detail) pushUniqueDetail(toolResultDetails, detail);
   }
 
   const summary = textChunks.join("\n").trim();
+  const localCommandStdout = extractLocalCommandStdout(raw);
   if (summary) {
     const commandDisplay = extractCommandDisplay(summary);
+    if (commandDisplay && localCommandStdout) {
+      pushUniqueDetail(toolUseDetails, {
+        title: "",
+        kind: "command_stdout",
+        lines: [tt("command.stdout", { text: localCommandStdout })],
+      });
+    }
     return { summary: commandDisplay || summary, tags, thinkingDetails, toolUseDetails, toolResultDetails };
+  }
+
+  if (toolUseResultDetail) {
+    return {
+      summary: joinDefinedParts([toolUseResultDetail.title, ...toolUseResultDetail.lines.slice(0, 1)], " | "),
+      tags,
+      thinkingDetails,
+      toolUseDetails,
+      toolResultDetails,
+    };
   }
 
   if (contentItems.some((item) => item.type === "tool_result")) {
@@ -1734,8 +2200,9 @@ function normalizeEvents(events) {
   const normalized = [];
   const toolResultsMap = new Map();
   const consumedResultIds = new Set();
+  const localCommandStdoutMap = new Map();
 
-  // 第一階段：預掃描所有 tool_result
+  // 第一階段：預掃描所有 tool_result 與 local-command-stdout 關聯
   for (const event of events) {
     const raw = event.raw || {};
     const contentItems = normalizeContentItems(raw.message?.content || raw.content);
@@ -1748,6 +2215,19 @@ function normalizeEvents(events) {
     if (raw.type === "tool_result" && raw.tool_use_id) {
       toolResultsMap.set(raw.tool_use_id, raw);
     }
+
+    const parentUuid = String(
+      event.parentUuid || raw.parentUuid || event.logicalParentUuid || raw.logicalParentUuid || "",
+    ).trim();
+    const localCommandStdout = extractLocalCommandStdout(raw);
+    if (parentUuid && localCommandStdout) {
+      const existing = localCommandStdoutMap.get(parentUuid);
+      if (existing) {
+        localCommandStdoutMap.set(parentUuid, `${existing}\n${localCommandStdout}`);
+      } else {
+        localCommandStdoutMap.set(parentUuid, localCommandStdout);
+      }
+    }
   }
 
   // 第二階段：正規化事件
@@ -1756,6 +2236,15 @@ function normalizeEvents(events) {
     const rawType = raw.type || event.eventType || "unknown";
     const role = raw.message?.role;
     const contentItems = normalizeContentItems(raw.message?.content || raw.content);
+    const parentUuid = String(
+      event.parentUuid || raw.parentUuid || event.logicalParentUuid || raw.logicalParentUuid || "",
+    ).trim();
+    const localCommandStdout = extractLocalCommandStdout(raw);
+    const commandDisplayFromRaw = extractCommandDisplay(extractChatOnlySummary(raw));
+    if (parentUuid && localCommandStdout && !commandDisplayFromRaw) {
+      // 純 stdout 事件已合併到 parentUuid 對應的 command 卡片，不重複顯示
+      continue;
+    }
     
     // 檢查此事件是否僅包含已「消費」的工具結果
     const onlyConsumedResults = contentItems.length > 0 && contentItems.every(item => 
@@ -1778,11 +2267,24 @@ function normalizeEvents(events) {
 
     if (roleType === "user" || roleType === "assistant") {
       const text = extractTextSummary(raw, toolResultsMap);
+      const eventUuid = String(event.uuid || raw.uuid || "").trim();
+      const correlatedLocalStdout = eventUuid ? localCommandStdoutMap.get(eventUuid) : "";
+      if (correlatedLocalStdout) {
+        const commandDisplay = extractCommandDisplay(text.summary) || text.summary;
+        if (commandDisplay) {
+          pushUniqueDetail(text.toolUseDetails, {
+            title: "",
+            kind: "command_stdout",
+            lines: [tt("command.stdout", { text: correlatedLocalStdout })],
+          });
+        }
+      }
       normalized.push({
         kind: roleType === "user" ? "chat_user" : "chat_assistant",
         line: event.line,
         timestamp: event.timestamp,
         title: roleType === "user" ? tt("chat.user") : tt("chat.assistant"),
+        headerModel: extractHeaderModelLabel(raw),
         summary: text.summary,
         conversationSummary: extractChatOnlySummary(raw),
         conversationToolSummary: (() => {
@@ -1926,11 +2428,13 @@ function renderChatItem(item) {
   const rowClass = item.kind === "chat_user" ? "user-row" : "assist-row";
   const msgClass = item.kind === "chat_user" ? "user-msg" : "assist-msg";
   const article = createElement("article", rowClass);
+  article.dataset.anchor = item.line;
   const bubble = createElement("section", msgClass);
   const header = createElement("header", "msg-header");
-  const visibleTags = state.hideSystemEvents
-    ? item.tags.filter((tag) => tag !== "thinking" && tag !== "tool_result")
-    : item.tags;
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const visibleTags = tags
+    .filter((tag) => tag !== "thinking" && tag !== "tool_result")
+    .filter((tag) => !(typeof tag === "string" && tag.startsWith("tool:")));
   const roleClass = item.kind === "chat_user" ? "user-role" : "assist-role";
   const timeClass = item.kind === "chat_user" ? "user-time" : "assist-time";
   const tagClass = item.kind === "chat_user" ? "user-tag" : "assist-tag";
@@ -1941,11 +2445,14 @@ function renderChatItem(item) {
       header.append(createElement("span", `tag-badge ${tagClass}`, tag));
     }
   }
+  if (item.headerModel) {
+    header.append(createElement("span", `tag-badge ${tagClass}`, item.headerModel));
+  }
   header.append(createElement("span", "line", `line ${item.line}`));
 
   const fullText = String(
     state.hideSystemEvents
-      ? item.conversationSummary || item.conversationToolSummary || ""
+      ? item.conversationSummary || (state.hideToolEvents ? "" : item.conversationToolSummary || "")
       : item.summary || "",
   );
   const isLong = fullText.length > CHAT_PREVIEW_LENGTH;
@@ -1986,12 +2493,12 @@ function renderChatItem(item) {
   }
 
   if (
-    !state.hideSystemEvents &&
+    !state.hideThinkingEvents &&
     item.kind === "chat_assistant" &&
     Array.isArray(item.thinkingDetails) &&
     item.thinkingDetails.length > 0
   ) {
-    const thinkingBox = createElement("details", "assistant-fold");
+    const thinkingBox = createElement("details", "assistant-fold assistant-fold--thinking");
     thinkingBox.append(
       createElement("summary", "assistant-fold-summary", tt("section.thinking", { count: item.thinkingDetails.length })),
     );
@@ -2004,14 +2511,21 @@ function renderChatItem(item) {
   }
 
   if (
-    item.kind === "chat_assistant" &&
+    (item.kind === "chat_assistant" || item.kind === "chat_user") &&
     Array.isArray(item.toolUseDetails) &&
     item.toolUseDetails.length > 0
   ) {
-    for (const detail of item.toolUseDetails.slice(0, 4)) {
+    const visibleToolUseDetails = state.hideToolEvents
+      ? item.toolUseDetails.filter((detail) =>
+          detail?.kind === "command_stdout",
+        )
+      : item.toolUseDetails;
+    for (const detail of visibleToolUseDetails.slice(0, 4)) {
       const cardClass = "assistant-tool-card assistant-tool-card--direct";
       const card = createElement("div", cardClass);
-      card.append(createElement("div", "assistant-tool-title", detail.title));
+      if (String(detail?.title || "").trim()) {
+        card.append(createElement("div", "assistant-tool-title", detail.title));
+      }
       for (const line of detail.lines.slice(0, 5)) {
         card.append(createElement("div", "assistant-tool-line", line));
       }
@@ -2020,8 +2534,7 @@ function renderChatItem(item) {
   }
 
   if (
-    !state.hideSystemEvents &&
-    item.kind === "chat_assistant" &&
+    !state.hideToolEvents &&
     Array.isArray(item.toolResultDetails) &&
     item.toolResultDetails.length > 0
   ) {
@@ -2052,6 +2565,7 @@ function renderChatItem(item) {
 
 function renderTechGroup(group) {
   const wrapper = createElement("section", "tool-row");
+  wrapper.dataset.anchor = group.id;
   const block = createElement("section", "tool-block");
   const viewState = state.techViewState[group.id] || {
     expanded: false,
@@ -2140,7 +2654,21 @@ function renderTechGroup(group) {
   return wrapper;
 }
 
-function renderTimelineView() {
+function renderTimelineView(preserveScroll = false) {
+  let anchorKey = null;
+  let anchorOffset = 0;
+  if (preserveScroll) {
+    const containerRect = refs.viewerContent.getBoundingClientRect();
+    const anchors = refs.viewerContent.querySelectorAll("[data-anchor]");
+    for (const el of anchors) {
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom > containerRect.top) {
+        anchorKey = el.dataset.anchor;
+        anchorOffset = rect.top - containerRect.top;
+        break;
+      }
+    }
+  }
   refs.viewerContent.innerHTML = "";
 
   if (state.parseErrorCode === "PARSE_PARTIAL") {
@@ -2163,8 +2691,24 @@ function renderTimelineView() {
     }
 
     if (item.kind.startsWith("chat")) {
+      const isMetaChatItem =
+        item?.raw?.isMeta === true || item?.raw?.message?.isMeta === true;
+      if (state.hideThinkingEvents && isMetaChatItem) {
+        continue;
+      }
       if (state.hideSystemEvents && item.kind === "chat_assistant") {
-        if (!String(item.conversationSummary || item.conversationToolSummary || "").trim()) {
+        const summaryText = String(
+          item.conversationSummary || (state.hideToolEvents ? "" : item.conversationToolSummary || ""),
+        ).trim();
+        const hasVisibleToolDetails =
+          !state.hideToolEvents &&
+          ((Array.isArray(item.toolUseDetails) && item.toolUseDetails.length > 0) ||
+            (Array.isArray(item.toolResultDetails) && item.toolResultDetails.length > 0));
+        const hasVisibleThinkingDetails =
+          !state.hideThinkingEvents &&
+          Array.isArray(item.thinkingDetails) &&
+          item.thinkingDetails.length > 0;
+        if (!summaryText && !hasVisibleToolDetails && !hasVisibleThinkingDetails) {
           continue;
         }
       }
@@ -2187,7 +2731,16 @@ function renderTimelineView() {
     refs.viewerContent.innerHTML = `<p class="placeholder">${escapeHtml(tt(messageKey))}</p>`;
   } else {
     requestAnimationFrame(() => {
-      refs.viewerContent.scrollTop = refs.viewerContent.scrollHeight;
+      if (preserveScroll && anchorKey !== null) {
+        const target = refs.viewerContent.querySelector(`[data-anchor="${CSS.escape(String(anchorKey))}"]`);
+        if (target) {
+          const containerRect = refs.viewerContent.getBoundingClientRect();
+          const targetRect = target.getBoundingClientRect();
+          refs.viewerContent.scrollTop += targetRect.top - containerRect.top - anchorOffset;
+        }
+      } else if (!preserveScroll) {
+        refs.viewerContent.scrollTop = refs.viewerContent.scrollHeight;
+      }
     });
   }
 }
@@ -2228,49 +2781,181 @@ function doesTimelineItemMatchSearch(item, query) {
   return false;
 }
 
+function calculateSessionDurationMinutes(events) {
+  if (!Array.isArray(events) || events.length === 0) return null;
+  let totalDurationMs = 0;
+
+  for (const event of events) {
+    const raw = event?.raw;
+    if (!raw || typeof raw !== "object") continue;
+    if (raw.type !== "system" || raw.subtype !== "turn_duration") continue;
+    const durationMs = Number(raw.durationMs);
+    if (!Number.isFinite(durationMs) || durationMs < 0) continue;
+    totalDurationMs += durationMs;
+  }
+
+  if (totalDurationMs <= 0) return null;
+  return Math.ceil(totalDurationMs / 60000);
+}
+
 function renderTimeline(payload) {
   const entry = findSelectedEntry();
   const rawSessionName = entry?.label
     ? String(entry.label)
     : String(payload.path || "").split(/[\\/]/).pop() || "";
   const metaPath = buildSessionMetaPath(rawSessionName);
-  const eventCount = Array.isArray(payload.events) ? payload.events.length : 0;
+  const events = Array.isArray(payload.events) ? payload.events : [];
+  const eventCount = events.length;
+  const totalMinutes = calculateSessionDurationMinutes(events);
   const metaDate = formatMetaDay(entry?.modifiedMs) || "";
-  const metaRight = metaDate
-    ? tt("viewer.metaSummary", { date: metaDate, count: eventCount })
-    : tt("viewer.metaSummaryNoDate", { count: eventCount });
+  const metaRight = buildViewerMetaSummary({
+    date: metaDate,
+    count: eventCount,
+    minutes: totalMinutes,
+  });
 
   refs.viewerTitle.textContent = tt("viewer.timeline");
   renderViewerMeta(metaPath, metaRight);
 
   state.parseErrorCode = payload.errorCode || "";
   state.parseErrors = Array.isArray(payload.errors) ? payload.errors : [];
-  state.timelineSearchQuery = "";
-  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
+  resetViewerSearchQuery();
   state.techViewState = {};
-  state.timelineItems = buildTimelineItems(Array.isArray(payload.events) ? payload.events : []);
+  state.timelineItems = buildTimelineItems(events);
 
   renderTimelineView();
 }
 
+function buildViewerMetaSummary({ date, count, minutes = null }) {
+  if (minutes) {
+    return date
+      ? tt("viewer.metaSummaryWithDuration", { date, count, minutes })
+      : tt("viewer.metaSummaryNoDateWithDuration", { count, minutes });
+  }
+  return date
+    ? tt("viewer.metaSummary", { date, count })
+    : tt("viewer.metaSummaryNoDate", { count });
+}
+
+function buildLoadingMetaRight(modifiedMs) {
+  const metaDate = formatMetaDay(modifiedMs) || "";
+  return buildViewerMetaSummary({ date: metaDate, count: "-" });
+}
+
+function renderLoadingMeta(entry) {
+  if (entry.entryType === "session") {
+    refs.viewerTitle.textContent = tt("viewer.timeline");
+    renderViewerMeta(
+      buildSessionMetaPath(String(entry.label || "")),
+      buildLoadingMetaRight(entry.modifiedMs),
+    );
+    return;
+  }
+
+  if (entry.entryType === "memory_file") {
+    renderViewerMeta(
+      buildMemoryMetaPath(String(entry.label || "")),
+      buildLoadingMetaRight(entry.modifiedMs),
+    );
+  }
+}
+
+function bindDialogCancel(dialog, onClose) {
+  dialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    onClose();
+  });
+}
+
+function bindDialogSubmit(form) {
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+  });
+}
+
+function bindClick(element, handler) {
+  element?.addEventListener("click", handler);
+}
+
+function bindInputText(input, onChange) {
+  if (!input) return;
+  input.addEventListener("input", (event) => {
+    onChange(String(event.target.value || ""));
+  });
+}
+
+function bindTimelineFilterToggle(button, stateKey) {
+  bindClick(button, () => {
+    state[stateKey] = !state[stateKey];
+    updateEventFilterToggles();
+    renderTimelineView(true);
+  });
+}
+
+function initDomRefs() {
+  const selectorMap = {
+    panelGrid: "#panel-grid",
+    projectsPanel: "#projects-panel",
+    entriesPanel: "#entries-panel",
+    resizerLeft: "#resizer-left",
+    resizerMiddle: "#resizer-middle",
+    projectsList: "#projects-list",
+    projectsSearchInput: "#projects-search-input",
+    entriesList: "#entries-list",
+    viewerTitle: "#viewer-title",
+    viewerMeta: "#viewer-meta",
+    viewerMetaPath: "#viewer-meta-path",
+    viewerMetaTime: "#viewer-meta-time",
+    viewerSearchWrap: "#viewer-search",
+    viewerSearchInput: "#viewer-search-input",
+    viewerContent: "#viewer-content",
+    status: "#status",
+    hideSystemEventsToggle: "#hide-system-events-toggle",
+    hideToolEventsToggle: "#hide-tool-events-toggle",
+    hideThinkingEventsToggle: "#hide-thinking-events-toggle",
+    hideSystemEventsWrap: "#viewer-event-toggle-group",
+    localeSelect: "#locale-select",
+    aboutButton: "#about-button",
+    aboutDialog: "#about-dialog",
+    aboutCloseButton: "#about-close",
+    toastViewport: "#undo-toast-viewport",
+    projectDeleteDialog: "#project-delete-dialog",
+    projectDeleteForm: "#project-delete-form",
+    projectDeleteImpact: "#project-delete-impact",
+    projectDeleteMessage: "#project-delete-message",
+    projectDeleteInput: "#project-delete-input",
+    projectDeleteConfirmButton: "#project-delete-confirm",
+    projectDeleteCancelButton: "#project-delete-cancel",
+    sessionDeleteDialog: "#session-delete-dialog",
+    sessionDeleteForm: "#session-delete-form",
+    sessionDeleteMessage: "#session-delete-message",
+    sessionDeleteConfirmButton: "#session-delete-confirm",
+    sessionDeleteCancelButton: "#session-delete-cancel",
+    ctxMenu: "#ctx-menu",
+  };
+
+  for (const [key, selector] of Object.entries(selectorMap)) {
+    refs[key] = document.querySelector(selector);
+  }
+  refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
+}
+
 async function loadProjects() {
-  setStatus(tt("status.loadingProjects"));
+  setInfoStatus("status.loadingProjects");
   try {
     state.projects = await invoke("list_projects");
     renderProjects();
-    setStatus(tt("status.projectsLoaded", { count: state.projects.length }));
+    setInfoStatus("status.projectsLoaded", { count: state.projects.length });
   } catch (errorCode) {
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
 async function selectProject(projectPath) {
   state.selectedProjectPath = projectPath;
-  state.selectedEntryPath = "";
-  state.selectedEntryType = "";
-  clearViewer();
+  clearSelectedEntryState();
   renderProjects();
-  setStatus(tt("status.loadingEntries"));
+  setInfoStatus("status.loadingEntries");
 
   try {
     state.entries = await invoke("list_project_entries", {
@@ -2283,11 +2968,11 @@ async function selectProject(projectPath) {
       }
     }
     renderEntries();
-    setStatus(tt("status.entriesLoaded", { count: state.entries.length }));
+    setInfoStatus("status.entriesLoaded", { count: state.entries.length });
   } catch (errorCode) {
     state.entries = [];
     renderEntries();
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
@@ -2295,163 +2980,115 @@ async function selectEntry(entry) {
   state.selectedEntryPath = entry.path;
   state.selectedEntryType = entry.entryType;
   renderEntries();
-  setStatus(tt("status.loadingContent"));
+  setInfoStatus("status.loadingContent");
   const hideSystemEventsControl = entry.entryType === "memory_file";
   setHideSystemEventsVisible(!hideSystemEventsControl);
   setViewerSearchVisible(entry.entryType !== "memory_file");
-  state.timelineSearchQuery = "";
-  if (refs.viewerSearchInput) refs.viewerSearchInput.value = "";
-  if (entry.entryType === "session") {
-    const metaDate = formatMetaDay(entry.modifiedMs) || "";
-    const metaPath = buildSessionMetaPath(String(entry.label || ""));
-    const metaRight = metaDate
-      ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
-      : tt("viewer.metaSummaryNoDate", { count: "-" });
-    refs.viewerTitle.textContent = tt("viewer.timeline");
-    renderViewerMeta(metaPath, metaRight);
-  }
-  if (entry.entryType === "memory_file") {
-    const metaDate = formatMetaDay(entry.modifiedMs) || "";
-    const metaPath = buildMemoryMetaPath(String(entry.label || ""));
-    const metaRight = metaDate
-      ? tt("viewer.metaSummary", { date: metaDate, count: "-" })
-      : tt("viewer.metaSummaryNoDate", { count: "-" });
-    renderViewerMeta(metaPath, metaRight);
-  }
+  resetViewerSearchQuery();
+  renderLoadingMeta(entry);
 
   try {
     if (entry.entryType === "memory_file") {
       const payload = await invoke("read_memory", { memoryPath: entry.path });
       renderMemory(payload);
-      setStatus(tt("status.memoryLoaded"), "info");
+      setInfoStatus("status.memoryLoaded");
       return;
     }
 
     const payload = await invoke("read_session_timeline", {
       sessionPath: entry.path,
+      strictMode: true,
     });
     setHideSystemEventsVisible(true);
     renderTimeline(payload);
     if (payload.errorCode) {
       setStatus(formatError(payload.errorCode), "warn");
     } else {
-      setStatus(tt("status.sessionLoaded"), "info");
+      setInfoStatus("status.sessionLoaded");
     }
   } catch (errorCode) {
     if (entry.entryType !== "memory_file") {
       setHideSystemEventsVisible(true);
     }
-    setStatus(formatError(String(errorCode)), "error");
+    setErrorStatus(errorCode);
   }
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  refs.panelGrid = document.querySelector("#panel-grid");
-  refs.projectsPanel = document.querySelector("#projects-panel");
-  refs.entriesPanel = document.querySelector("#entries-panel");
-  refs.resizerLeft = document.querySelector("#resizer-left");
-  refs.resizerMiddle = document.querySelector("#resizer-middle");
-  refs.projectsList = document.querySelector("#projects-list");
-  refs.projectsSearchInput = document.querySelector("#projects-search-input");
-  refs.entriesList = document.querySelector("#entries-list");
-  refs.viewerTitle = document.querySelector("#viewer-title");
-  refs.viewerMeta = document.querySelector("#viewer-meta");
-  refs.viewerMetaPath = document.querySelector("#viewer-meta-path");
-  refs.viewerMetaTime = document.querySelector("#viewer-meta-time");
-  refs.viewerSearchWrap = document.querySelector("#viewer-search");
-  refs.viewerSearchInput = document.querySelector("#viewer-search-input");
-  refs.viewerContent = document.querySelector("#viewer-content");
-  refs.status = document.querySelector("#status");
-  refs.hideSystemEventsToggle = document.querySelector("#hide-system-events-toggle");
-  refs.hideSystemEventsWrap = document.querySelector(".hide-system-events-toggle");
-  refs.pathTooltip = document.querySelector("#path-tooltip");
-  refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
-  refs.localeSelect = document.querySelector("#locale-select");
-  refs.aboutButton = document.querySelector("#about-button");
-  refs.aboutDialog = document.querySelector("#about-dialog");
-  refs.aboutCloseButton = document.querySelector("#about-close");
-  refs.toast = document.querySelector("#undo-toast");
-  refs.toastMessage = document.querySelector("#undo-toast-message");
-  refs.toastUndoButton = document.querySelector("#undo-toast-undo");
-  refs.projectDeleteDialog = document.querySelector("#project-delete-dialog");
-  refs.projectDeleteForm = document.querySelector("#project-delete-form");
-  refs.projectDeleteImpact = document.querySelector("#project-delete-impact");
-  refs.projectDeleteMessage = document.querySelector("#project-delete-message");
-  refs.projectDeleteInput = document.querySelector("#project-delete-input");
-  refs.projectDeleteConfirmButton = document.querySelector("#project-delete-confirm");
-  refs.projectDeleteCancelButton = document.querySelector("#project-delete-cancel");
-  refs.sessionDeleteDialog = document.querySelector("#session-delete-dialog");
-  refs.sessionDeleteForm = document.querySelector("#session-delete-form");
-  refs.sessionDeleteMessage = document.querySelector("#session-delete-message");
-  refs.sessionDeleteConfirmButton = document.querySelector("#session-delete-confirm");
-  refs.sessionDeleteCancelButton = document.querySelector("#session-delete-cancel");
+  initDomRefs();
 
   for (const button of refs.themeButtons) {
-    button.addEventListener("click", () => {
+    bindClick(button, () => {
       setThemeMode(button.dataset.themeMode, { persist: true });
     });
   }
 
-  if (refs.projectsSearchInput) {
-    refs.projectsSearchInput.addEventListener("input", (event) => {
-      state.projectSearchQuery = String(event.target.value || "");
-      renderProjects();
-    });
-  }
-  if (refs.viewerSearchInput) {
-    refs.viewerSearchInput.addEventListener("input", (event) => {
-      state.timelineSearchQuery = String(event.target.value || "");
-      renderTimelineView();
-    });
-  }
-  refs.projectDeleteCancelButton?.addEventListener("click", () => {
+  bindInputText(refs.projectsSearchInput, (value) => {
+    state.projectSearchQuery = value;
+    renderProjects();
+  });
+  bindInputText(refs.viewerSearchInput, (value) => {
+    state.timelineSearchQuery = value;
+    renderTimelineView();
+  });
+  bindClick(refs.projectDeleteCancelButton, () => {
     closeProjectDeleteDialog();
   });
   refs.projectDeleteInput?.addEventListener("input", () => {
     updateProjectDeleteConfirmState();
   });
-  refs.projectDeleteConfirmButton?.addEventListener("click", async () => {
+  bindClick(refs.projectDeleteConfirmButton, async () => {
     await confirmProjectDelete();
   });
-  refs.projectDeleteDialog?.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeProjectDeleteDialog();
-  });
-  refs.projectDeleteForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-  });
-  refs.sessionDeleteCancelButton?.addEventListener("click", () => {
+  bindDialogCancel(refs.projectDeleteDialog, closeProjectDeleteDialog);
+  bindDialogSubmit(refs.projectDeleteForm);
+  bindClick(refs.sessionDeleteCancelButton, () => {
     closeSessionDeleteDialog();
   });
-  refs.sessionDeleteConfirmButton?.addEventListener("click", () => {
+  bindClick(refs.sessionDeleteConfirmButton, () => {
     confirmSessionDelete();
   });
-  refs.sessionDeleteDialog?.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeSessionDeleteDialog();
-  });
-  refs.sessionDeleteForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-  });
-  refs.aboutButton?.addEventListener("click", () => {
+  bindDialogCancel(refs.sessionDeleteDialog, closeSessionDeleteDialog);
+  bindDialogSubmit(refs.sessionDeleteForm);
+  bindClick(refs.aboutButton, () => {
     openAboutDialog();
   });
-  refs.aboutCloseButton?.addEventListener("click", () => {
+  bindClick(refs.aboutCloseButton, () => {
     closeAboutDialog();
   });
-  refs.aboutDialog?.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeAboutDialog();
-  });
+  bindDialogCancel(refs.aboutDialog, closeAboutDialog);
 
-  hideUndoToast();
-  state.hideSystemEvents = true;
-  updateHideSystemEventsToggle();
-  refs.hideSystemEventsToggle.addEventListener("click", () => {
-    state.hideSystemEvents = !state.hideSystemEvents;
-    updateHideSystemEventsToggle();
-    renderTimelineView();
+  // Context menu global close handlers
+  document.addEventListener("click", (e) => {
+    if (refs.ctxMenu && !refs.ctxMenu.contains(e.target)) {
+      hideContextMenu();
+    }
   });
+  document.addEventListener("keydown", (e) => {
+    if (!refs.ctxMenu || refs.ctxMenu.hidden) return;
+    if (e.key === "Escape") {
+      hideContextMenu();
+      state.ctxMenuTarget?.focus();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const items = Array.from(refs.ctxMenu.querySelectorAll(".ctx-menu-item"));
+      const idx = items.indexOf(document.activeElement);
+      const next = e.key === "ArrowDown"
+        ? items[(idx + 1) % items.length]
+        : items[(idx - 1 + items.length) % items.length];
+      next?.focus();
+    }
+  });
+  refs.ctxMenu?.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  renderUndoToasts();
+  state.hideSystemEvents = true;
+  state.hideToolEvents = true;
+  state.hideThinkingEvents = true;
+  updateEventFilterToggles();
+  bindTimelineFilterToggle(refs.hideSystemEventsToggle, "hideSystemEvents");
+  bindTimelineFilterToggle(refs.hideToolEventsToggle, "hideToolEvents");
+  bindTimelineFilterToggle(refs.hideThinkingEventsToggle, "hideThinkingEvents");
   initLocaleSelector();
   initThemeMode();
   initColumnResizers();
@@ -2459,4 +3096,3 @@ window.addEventListener("DOMContentLoaded", async () => {
   clearViewer();
   await loadProjects();
 });
-
