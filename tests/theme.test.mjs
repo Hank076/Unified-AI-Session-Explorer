@@ -18,6 +18,16 @@ function extractRootVariable(css, variableName) {
   return variableMatch[1].trim();
 }
 
+function extractLightVariable(css, variableName) {
+  const lightMatch = css.match(/html\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/);
+  assert.ok(lightMatch, "light theme block should exist");
+  const variableMatch = lightMatch[1].match(
+    new RegExp(`${variableName}\\s*:\\s*([^;]+);`),
+  );
+  assert.ok(variableMatch, `${variableName} should exist in light theme block`);
+  return variableMatch[1].trim();
+}
+
 function hexToRgb(hex) {
   const normalized = hex.replace("#", "").trim();
   const raw =
@@ -58,6 +68,8 @@ function getContrastRatio(foregroundHex, backgroundHex) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+// ── theme logic ────────────────────────────────────────────────────────────
+
 test("resolveTheme uses explicit light override", () => {
   assert.equal(resolveTheme({ mode: "light", systemPrefersDark: true }), "light");
 });
@@ -91,6 +103,8 @@ test("buildThemeDatasetValue maps only light and dark", () => {
   assert.equal(buildThemeDatasetValue("unknown"), "dark");
 });
 
+// ── CSS structure ──────────────────────────────────────────────────────────
+
 test("light theme does not override layout-affecting variables", () => {
   const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
   const match = css.match(/html\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/);
@@ -112,18 +126,6 @@ test("light theme does not override layout-affecting variables", () => {
       `light theme should not override ${variable}`,
     );
   }
-});
-
-test("dark theme viewer search placeholder meets WCAG AA contrast", () => {
-  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
-  const foreground = extractRootVariable(css, "--viewer-search-icon");
-  const background = extractRootVariable(css, "--viewer-search-bg");
-  const ratio = getContrastRatio(foreground, background);
-
-  assert.ok(
-    ratio >= 4.5,
-    `viewer search contrast should be >= 4.5, actual: ${ratio.toFixed(2)}`,
-  );
 });
 
 test("dark theme uses graphite blue-gray palette", () => {
@@ -169,4 +171,84 @@ test("styles include clreq-oriented zh-Hant rules", () => {
   assert.match(css, /line-break:\s*strict;/);
   assert.match(css, /word-break:\s*keep-all;/);
   assert.match(css, /hanging-punctuation:\s*allow-end;/);
+});
+
+// ── contrast: dark mode ────────────────────────────────────────────────────
+
+test("dark theme viewer search placeholder meets WCAG AA contrast", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const foreground = extractRootVariable(css, "--viewer-search-icon");
+  const background = extractRootVariable(css, "--viewer-search-bg");
+  const ratio = getContrastRatio(foreground, background);
+
+  assert.ok(
+    ratio >= 4.5,
+    `viewer search contrast should be >= 4.5, actual: ${ratio.toFixed(2)}`,
+  );
+});
+
+test("dark theme --text-secondary meets contrast ratio on panel-bg", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const foreground = extractRootVariable(css, "--text-secondary");
+  const background = extractRootVariable(css, "--viewer-meta-bg");
+  const ratio = getContrastRatio(foreground, background);
+
+  assert.ok(
+    ratio >= 7,
+    `text-secondary contrast should be >= 7:1 on panel-bg, actual: ${ratio.toFixed(2)}`,
+  );
+});
+
+// ── a11y tokens ────────────────────────────────────────────────────────────
+
+test("dark theme defines --accent-text with accessible lighter blue", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  assert.equal(extractRootVariable(css, "--accent-text"), "#a8d0fc");
+});
+
+test("dark theme defines --accent-soft for overlay surfaces", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const value = extractRootVariable(css, "--accent-soft");
+  assert.match(value, /^#[0-9a-f]{6}$/, "--accent-soft should be a hex color");
+});
+
+test("light theme defines --accent-soft for overlay surfaces", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const value = extractLightVariable(css, "--accent-soft");
+  assert.match(value, /^#[0-9a-f]{6}$/, "--accent-soft light should be a hex color");
+});
+
+test("active filter toggle uses --accent-text instead of --accent", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const match = css.match(/\.hide-system-events-toggle\[aria-pressed="true"\]\s*\{([^}]*)\}/);
+  assert.ok(match, "active toggle rule should exist");
+  const rule = match[1];
+  assert.match(rule, /color:\s*var\(--accent-text\)/, "pressed state should use --accent-text");
+  assert.doesNotMatch(rule, /color:\s*var\(--accent\)[^-]/, "pressed state should not use bare --accent");
+});
+
+// ── font sizes ─────────────────────────────────────────────────────────────
+
+test("no sub-minimum font sizes remain (10px or 11px)", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const lines = css.split(/\r?\n/);
+  const violations = lines
+    .map((line, i) => ({ line, num: i + 1 }))
+    .filter(({ line }) => /font(-size)?:\s*(10|11)px/.test(line));
+
+  assert.deepEqual(
+    violations.map((v) => `line ${v.num}: ${v.line.trim()}`),
+    [],
+    "all font sizes should be >= 12px",
+  );
+});
+
+test(".panel h2 font-size meets 14px minimum for non-caption headings", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const match = css.match(/\.panel h2\s*\{([^}]*)\}/);
+  assert.ok(match, ".panel h2 rule should exist");
+  const sizeMatch = match[1].match(/font-size:\s*(\d+)px/);
+  assert.ok(sizeMatch, ".panel h2 should have an explicit font-size");
+  const size = Number(sizeMatch[1]);
+  assert.ok(size >= 14, `.panel h2 font-size should be >= 14px, got ${size}px`);
 });
