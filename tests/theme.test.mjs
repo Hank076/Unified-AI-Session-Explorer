@@ -126,6 +126,15 @@ test("dark theme viewer search placeholder meets WCAG AA contrast", () => {
   );
 });
 
+test("dark theme uses graphite blue-gray palette", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+
+  assert.equal(extractRootVariable(css, "--panel-border"), "#334155");
+  assert.equal(extractRootVariable(css, "--panel-title"), "#93c5fd");
+  assert.equal(extractRootVariable(css, "--accent"), "#60a5fa");
+  assert.equal(extractRootVariable(css, "--viewer-bg"), "#020817");
+});
+
 test("spacing declarations follow the 8px scale", () => {
   const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
   const lines = css.split(/\r?\n/);
