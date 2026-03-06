@@ -7,7 +7,7 @@
   --font-ui: "Manrope", "Inter", sans-serif;
   --bg-app: radial-gradient(ellipse 80% 60% at 20% 10%, #111827 0%, #020617 100%);
   --text-primary: #e5edf8;
-  --text-secondary: #b8c8d8;   /* was #94a3b8 Lc 55 → now Lc 75 */
+  --text-secondary: #becbd9;   /* was #94a3b8 Lc 55 → now Lc 76 on panel-bg */
   --text-muted: #98afc4;       /* was #64748b Lc 33 → now Lc 61 */
   --panel-bg: rgba(15, 23, 42, 0.82);
   --panel-border: #334155;
@@ -28,7 +28,9 @@
   --divider: #1e293b;
   --accent: #60a5fa;
   --accent-strong: #38bdf8;
-  --brand-sub: #b8c8d8;        /* was #94a3b8 Lc 55 → now Lc 75 */
+  --accent-text: #a8d0fc;       /* lighter blue for text on dark bg, Lc 68 on accent-tinted surface */
+  --accent-soft: #1e3a8a;       /* tinted surface base for color-mix overlays */
+  --brand-sub: #becbd9;         /* was #94a3b8 Lc 55 → now Lc 76 on panel-bg */
   --header-bg: rgba(2, 6, 23, 0.88);
   --header-border: rgba(51, 65, 85, 0.72);
   --header-height: 64px;
@@ -40,7 +42,7 @@
   --viewer-search-border: #334155;
   --viewer-search-icon: #94a3b8;
   --viewer-meta-path: #a8d0fc;  /* was #93c5fd Lc 72 → now Lc 78 */
-  --viewer-meta-time: #b8c8d8;  /* was #94a3b8 Lc 55 → now Lc 75 */
+  --viewer-meta-time: #becbd9;  /* was #94a3b8 Lc 55 → now Lc 76 on panel-bg */
   --viewer-meta-border: #334155;
   --viewer-meta-bg: #0f172a;
   --viewer-meta-icon: #60a5fa;
@@ -72,7 +74,7 @@
   --chat-assistant-border: rgba(51, 65, 85, 0.72);
   --chip-bg: transparent;
   --chip-border: #334155;
-  --chip-text: #b8c8d8;        /* was #94a3b8 Lc 55 → now Lc 75 */
+  --chip-text: #becbd9;        /* was #94a3b8 Lc 55 → now Lc 76 on panel-bg */
   --assistant-bg: #0f172a;
   --assistant-border: #334155;
   --assistant-card-bg: #162033;
@@ -121,6 +123,8 @@ html[data-theme="light"] {
   --divider: #d8dfe7;
   --accent: #1d4ed8;
   --accent-strong: #3b82f6;
+  --accent-text: var(--accent); /* accent passes on light bg, no separate token needed */
+  --accent-soft: #dbeafe;       /* light blue tint for color-mix overlays */
   --brand-sub: #4f5f70;        /* was #71717a Lc 73 → now Lc 82 */
   --header-bg: #ffffff;
   --header-border: #e4e4e7;
@@ -164,7 +168,7 @@ html[data-theme="light"] {
   --chat-assistant-border: #e4e4e7;
   --chip-bg: transparent;
   --chip-border: #c3cfdd;
-  --chip-text: #536376;
+  --chip-text: #4a5b6d;        /* was #536376 Lc 74 → now Lc 76 on #f4f7fb */
   --assistant-bg: #f4f7fb;
   --assistant-border: #d4deea;
   --assistant-card-bg: #ffffff;
@@ -527,7 +531,7 @@ html:lang(zh-Hant) {
 .hide-system-events-toggle[aria-pressed="true"] {
   border-color: var(--control-border-active);
   background: color-mix(in oklab, var(--accent) 12%, var(--control-bg));
-  color: var(--accent);
+  color: var(--accent-text);  /* #a8d0fc dark / #1d4ed8 light — Lc ~68/75 vs Lc 44 fail */
 }
 
 .hide-system-events-icon {
