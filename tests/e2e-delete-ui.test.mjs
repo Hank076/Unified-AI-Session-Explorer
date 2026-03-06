@@ -27,6 +27,14 @@ function createMockInvoke() {
       sizeBytes: 120,
     },
     {
+      entryType: "session",
+      label: "beta.jsonl",
+      path: "D:/mock/demo-project/beta.jsonl",
+      parentSession: null,
+      modifiedMs: Date.now() - 1000,
+      sizeBytes: 88,
+    },
+    {
       entryType: "subagent_session",
       label: "alpha-child.jsonl",
       path: "D:/mock/demo-project/alpha/subagents/alpha-child.jsonl",
@@ -347,13 +355,68 @@ test("session delete requires confirmation modal and supports undo", async () =>
   assert.equal(sessionDialog.open, false);
   assert.equal(mock.calls.some((call) => call.cmd === "delete_session"), false);
 
-  const toast = window.document.querySelector("#undo-toast");
-  assert.equal(toast.hidden, false);
-  const undo = window.document.querySelector("#undo-toast-undo");
+  const toastViewport = window.document.querySelector("#undo-toast-viewport");
+  assert.equal(toastViewport.hidden, false);
+  const toast = toastViewport.querySelector(".undo-toast");
+  assert.ok(toast);
+  const undo = toast.querySelector(".undo-toast-btn");
   undo.click();
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(mock.calls.some((call) => call.cmd === "delete_session"), false);
   assert.equal(mock.calls.some((call) => call.cmd === "list_project_entries"), true);
+
+  app.cleanup();
+});
+
+test("multiple session deletes keep separate undo toasts", async () => {
+  const app = await setupApp();
+  const { window, mock } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const sessionButtons = [...window.document.querySelectorAll('.entry-btn[data-entry-type="session"]')];
+  assert.equal(sessionButtons.length >= 2, true);
+
+  for (const sessionButton of sessionButtons.slice(0, 2)) {
+    sessionButton.dispatchEvent(
+      new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const deleteMenuItem = [...window.document.querySelectorAll(".ctx-menu-item")]
+      .find((el) => /delete|刪除/i.test(el.textContent));
+    assert.ok(deleteMenuItem, "context menu should have a delete item");
+    deleteMenuItem.click();
+
+    const confirm = window.document.querySelector("#session-delete-confirm");
+    confirm.click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  const toastViewport = window.document.querySelector("#undo-toast-viewport");
+  const toasts = [...toastViewport.querySelectorAll(".undo-toast")];
+  assert.equal(toasts.length, 2);
+  assert.match(toasts[0].textContent || "", /alpha|beta/i);
+  assert.match(toasts[1].textContent || "", /alpha|beta/i);
+
+  const secondUndo = toasts[1].querySelector(".undo-toast-btn");
+  secondUndo.click();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  const remainingToasts = [...toastViewport.querySelectorAll(".undo-toast")];
+  assert.equal(remainingToasts.length, 1);
+  assert.equal(mock.calls.some((call) => call.cmd === "delete_session"), false);
+  const visibleSessionButtons = [
+    ...window.document.querySelectorAll('.entry-btn[data-entry-type="session"]'),
+  ].map((el) => el.textContent || "");
+  assert.equal(visibleSessionButtons.length, 1, JSON.stringify(visibleSessionButtons));
+
+  const finalUndo = remainingToasts[0].querySelector(".undo-toast-btn");
+  finalUndo.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
 
   app.cleanup();
 });

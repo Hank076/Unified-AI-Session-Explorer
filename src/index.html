@@ -267,10 +267,14 @@
         </div>
       </form>
     </dialog>
-    <div id="undo-toast" class="undo-toast" role="status" aria-live="polite" hidden>
-      <span id="undo-toast-message"></span>
-      <button id="undo-toast-undo" type="button" class="undo-toast-btn" data-i18n="action.undo">Undo</button>
-    </div>
+    <section
+      id="undo-toast-viewport"
+      class="undo-toast-viewport"
+      aria-live="polite"
+      aria-atomic="false"
+      aria-relevant="additions text"
+      hidden
+    ></section>
     <div id="ctx-menu" class="ctx-menu" role="menu" aria-hidden="true" hidden></div>
   </body>
 </html>

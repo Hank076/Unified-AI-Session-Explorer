@@ -43,10 +43,11 @@ const state = {
   themeMode: "auto",
   resolvedTheme: "dark",
   locale: "en-US",
-  pendingSessionDelete: null,
+  pendingSessionDeletes: [],
   pendingSessionDeleteCandidate: null,
   pendingProjectDelete: null,
   pendingProjectPath: "",
+  undoToastAnimationFrameId: null,
   ctxMenuTarget: null,
 };
 
@@ -76,9 +77,7 @@ const refs = {
   aboutButton: null,
   aboutDialog: null,
   aboutCloseButton: null,
-  toast: null,
-  toastMessage: null,
-  toastUndoButton: null,
+  toastViewport: null,
   projectDeleteDialog: null,
   projectDeleteForm: null,
   projectDeleteImpact: null,
@@ -540,20 +539,145 @@ function createActionWrap(...buttons) {
   return wrap;
 }
 
-function showUndoToast(message, onUndo) {
-  if (!refs.toast || !refs.toastMessage || !refs.toastUndoButton) return;
-  refs.toastMessage.textContent = message;
-  refs.toast.hidden = false;
-  refs.toastUndoButton.onclick = () => {
-    onUndo();
-  };
+function getUndoToastItems() {
+  const now = Date.now();
+  const sessionItems = state.pendingSessionDeletes.map((pending) => {
+    const remainingMs = Math.max(0, (pending.expiresAt || now) - now);
+    const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+    return ({
+    id: pending.path,
+    kind: "session",
+    label: tt("undoToast.sessionLabel"),
+    message: tt("session.delete.toast", {
+      name: pending.label,
+      seconds: remainingSeconds,
+    }),
+    meta: `${remainingSeconds}s`,
+    progress: Math.max(
+      0,
+      Math.min(100, (remainingMs / Math.max(1, pending.totalMs || 1)) * 100),
+    ),
+    remainingSeconds,
+    onUndo: () => {
+      cancelPendingSessionDelete(pending, {
+        refreshEntries: true,
+        showCancelledStatus: true,
+      });
+    },
+    createdAt: pending.createdAt,
+    });
+  });
+
+  const projectItem = state.pendingProjectDelete
+    ? [{
+        id: state.pendingProjectDelete.projectPath,
+        kind: "project",
+        label: tt("undoToast.projectLabel"),
+        get remainingMs() {
+          return Math.max(0, (state.pendingProjectDelete.expiresAt || now) - now);
+        },
+      }]
+        .map((pendingItem) => {
+          const remainingMs = pendingItem.remainingMs;
+          const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+          return {
+        id: state.pendingProjectDelete.projectPath,
+        kind: "project",
+        label: tt("undoToast.projectLabel"),
+        message: tt("project.delete.toast", {
+          name: state.pendingProjectDelete.projectName,
+          seconds: remainingSeconds,
+        }),
+        meta: `${remainingSeconds}s`,
+        progress: Math.max(
+          0,
+          Math.min(
+            100,
+            (remainingMs / Math.max(1, state.pendingProjectDelete.totalMs || 1)) * 100,
+          ),
+        ),
+        remainingSeconds,
+        onUndo: () => {
+          cancelPendingProjectDelete({ showCancelledStatus: true });
+        },
+        createdAt: state.pendingProjectDelete.createdAt,
+          };
+        })
+    : [];
+
+  return [...sessionItems, ...projectItem].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-function hideUndoToast() {
-  if (!refs.toast || !refs.toastMessage || !refs.toastUndoButton) return;
-  refs.toast.hidden = true;
-  refs.toastMessage.textContent = "";
-  refs.toastUndoButton.onclick = null;
+function syncUndoToastAnimation() {
+  const hasPending = state.pendingSessionDeletes.length > 0 || Boolean(state.pendingProjectDelete);
+  const cancelFrame =
+    window.cancelAnimationFrame?.bind(window) ||
+    ((frameId) => window.clearTimeout(frameId));
+  if (!hasPending) {
+    if (state.undoToastAnimationFrameId) {
+      cancelFrame(state.undoToastAnimationFrameId);
+      state.undoToastAnimationFrameId = null;
+    }
+    return;
+  }
+  if (state.undoToastAnimationFrameId) return;
+
+  const tick = () => {
+    state.undoToastAnimationFrameId = null;
+    updateUndoToastVisuals();
+    syncUndoToastAnimation();
+  };
+  state.undoToastAnimationFrameId = window.requestAnimationFrame(tick);
+}
+
+function updateUndoToastVisuals() {
+  if (!refs.toastViewport || refs.toastViewport.hidden) return;
+  const items = getUndoToastItems();
+  for (const item of items) {
+    const toast = [...refs.toastViewport.children].find((node) => node.dataset.pendingId === item.id);
+    if (!toast) continue;
+    toast.style.setProperty("--undo-progress", `${item.progress}%`);
+
+    const message = toast.querySelector(".undo-toast__message");
+    const meta = toast.querySelector(".undo-toast__meta");
+    if (message) message.textContent = item.message;
+    if (meta) meta.textContent = item.meta;
+  }
+}
+
+function renderUndoToasts() {
+  if (!refs.toastViewport) return;
+  refs.toastViewport.replaceChildren();
+
+  const items = getUndoToastItems();
+  refs.toastViewport.hidden = items.length === 0;
+  if (items.length === 0) {
+    syncUndoToastAnimation();
+    return;
+  }
+
+  for (const item of items) {
+    const toast = createElement("article", "undo-toast");
+    toast.dataset.kind = item.kind;
+    toast.dataset.pendingId = item.id;
+    toast.style.setProperty("--undo-progress", `${item.progress}%`);
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-atomic", "true");
+
+    const body = createElement("div", "undo-toast__body");
+    const eyebrow = createElement("div", "undo-toast__eyebrow", item.label);
+    const message = createElement("p", "undo-toast__message", item.message);
+    const meta = createElement("div", "undo-toast__meta", item.meta);
+    body.append(eyebrow, message, meta);
+
+    const undoButton = createElement("button", "undo-toast-btn", tt("action.undo"));
+    undoButton.type = "button";
+    undoButton.addEventListener("click", item.onUndo);
+
+    toast.append(body, undoButton);
+    refs.toastViewport.appendChild(toast);
+  }
+  syncUndoToastAnimation();
 }
 
 function clearPendingTimers(pending) {
@@ -576,30 +700,59 @@ function clearPendingProjectTimers(pending) {
   clearPendingTimers(pending);
 }
 
+function getPendingSessionHiddenPaths() {
+  const hiddenPaths = new Set();
+  for (const pending of state.pendingSessionDeletes) {
+    hiddenPaths.add(pending.path);
+    for (const path of pending.hiddenPaths || []) {
+      hiddenPaths.add(path);
+    }
+  }
+  return hiddenPaths;
+}
+
+function applyPendingEntryFilters(entries) {
+  const hiddenPaths = getPendingSessionHiddenPaths();
+  if (hiddenPaths.size === 0) return entries;
+  return entries.filter((entry) => !hiddenPaths.has(entry.path));
+}
+
 function cancelPendingProjectDelete({ showCancelledStatus = false } = {}) {
   const pendingProject = state.pendingProjectDelete;
   if (!pendingProject) return;
   clearPendingProjectTimers(pendingProject);
   state.pendingProjectDelete = null;
-  hideUndoToast();
+  renderUndoToasts();
   if (showCancelledStatus) {
     setInfoStatus("status.deleteCancelled");
   }
 }
 
-function cancelPendingSessionDelete({
+function cancelPendingSessionDelete(
+  pending = null,
+  {
   executeNow = false,
   refreshEntries = false,
   showCancelledStatus = false,
-} = {}) {
-  const pendingSession = state.pendingSessionDelete;
-  if (!pendingSession) return;
-  clearPendingSessionTimers(pendingSession);
-  hideUndoToast();
-  state.pendingSessionDelete = null;
+  } = {},
+) {
+  const pendingSessions = pending
+    ? state.pendingSessionDeletes.filter((item) => item === pending)
+    : [...state.pendingSessionDeletes];
+  if (pendingSessions.length === 0) return;
+
+  for (const pendingSession of pendingSessions) {
+    clearPendingSessionTimers(pendingSession);
+  }
+  state.pendingSessionDeletes = state.pendingSessionDeletes.filter(
+    (item) => !pendingSessions.includes(item),
+  );
+  renderUndoToasts();
 
   if (executeNow) {
-    void executeSessionDelete(pendingSession);
+    for (const pendingSession of pendingSessions) {
+      void executeSessionDelete(pendingSession);
+    }
     return;
   }
   if (refreshEntries) {
@@ -616,9 +769,10 @@ async function refreshEntriesForSelectedProject() {
     renderEntries();
     return;
   }
-  state.entries = await invoke("list_project_entries", {
+  const entries = await invoke("list_project_entries", {
     projectPath: state.selectedProjectPath,
   });
+  state.entries = applyPendingEntryFilters(entries);
   renderEntries();
 }
 
@@ -679,7 +833,6 @@ function queueSessionDelete(entry) {
   if (!isSession && entry.entryType !== "subagent_session") return;
 
   cancelPendingProjectDelete({ showCancelledStatus: true });
-  cancelPendingSessionDelete({ executeNow: true });
 
   const removedPaths = [entry.path];
   if (isSession) {
@@ -696,46 +849,27 @@ function queueSessionDelete(entry) {
 
   const pending = {
     path: entry.path,
+    label: String(entry.label || ""),
     projectPath: state.selectedProjectPath,
+    hiddenPaths: removedPaths,
     timerId: null,
     countdownIntervalId: null,
-    remainingSeconds: Math.floor(SESSION_DELETE_UNDO_MS / 1000),
+    totalMs: SESSION_DELETE_UNDO_MS,
+    expiresAt: Date.now() + SESSION_DELETE_UNDO_MS,
+    createdAt: Date.now(),
   };
-  const updateToastCountdown = () => {
-    showUndoToast(
-      tt("session.delete.toast", { seconds: pending.remainingSeconds }),
-      () => {
-        clearPendingSessionTimers(pending);
-        if (state.pendingSessionDelete === pending) state.pendingSessionDelete = null;
-        hideUndoToast();
-        void refreshEntriesForSelectedProject();
-        setInfoStatus("status.deleteCancelled");
-      },
-    );
-  };
-
-  updateToastCountdown();
-  pending.countdownIntervalId = window.setInterval(() => {
-    if (pending.remainingSeconds <= 1) {
-      window.clearInterval(pending.countdownIntervalId);
-      pending.countdownIntervalId = null;
-      return;
-    }
-    pending.remainingSeconds -= 1;
-    updateToastCountdown();
-  }, 1000);
-
   pending.timerId = window.setTimeout(() => {
     void executeSessionDelete(pending);
   }, SESSION_DELETE_UNDO_MS);
-  state.pendingSessionDelete = pending;
+  state.pendingSessionDeletes = [...state.pendingSessionDeletes, pending];
+  renderUndoToasts();
 }
 
 async function executeSessionDelete(pending) {
   if (!pending) return;
   clearPendingSessionTimers(pending);
-  if (state.pendingSessionDelete === pending) state.pendingSessionDelete = null;
-  hideUndoToast();
+  state.pendingSessionDeletes = state.pendingSessionDeletes.filter((item) => item !== pending);
+  renderUndoToasts();
   try {
     await invoke("delete_session", { sessionPath: pending.path });
     await refreshEntriesIfProjectSelected(pending.projectPath);
@@ -818,7 +952,7 @@ function queueProjectDelete(projectPath) {
     return;
   }
 
-  cancelPendingSessionDelete({ refreshEntries: true });
+  cancelPendingSessionDelete(null, { refreshEntries: true });
   cancelPendingProjectDelete();
 
   const pending = {
@@ -826,45 +960,22 @@ function queueProjectDelete(projectPath) {
     projectName: getProjectDisplayName(project),
     timerId: null,
     countdownIntervalId: null,
-    remainingSeconds: Math.floor(SESSION_DELETE_UNDO_MS / 1000),
+    totalMs: SESSION_DELETE_UNDO_MS,
+    expiresAt: Date.now() + SESSION_DELETE_UNDO_MS,
+    createdAt: Date.now(),
   };
-
-  const updateToastCountdown = () => {
-    showUndoToast(
-      tt("project.delete.toast", {
-        name: pending.projectName,
-        seconds: pending.remainingSeconds,
-      }),
-      () => {
-        clearPendingProjectTimers(pending);
-        if (state.pendingProjectDelete === pending) state.pendingProjectDelete = null;
-        hideUndoToast();
-        setInfoStatus("status.deleteCancelled");
-      },
-    );
-  };
-
-  updateToastCountdown();
-  pending.countdownIntervalId = window.setInterval(() => {
-    if (pending.remainingSeconds <= 1) {
-      window.clearInterval(pending.countdownIntervalId);
-      pending.countdownIntervalId = null;
-      return;
-    }
-    pending.remainingSeconds -= 1;
-    updateToastCountdown();
-  }, 1000);
   pending.timerId = window.setTimeout(() => {
     void executeProjectDelete(pending);
   }, SESSION_DELETE_UNDO_MS);
   state.pendingProjectDelete = pending;
+  renderUndoToasts();
 }
 
 async function executeProjectDelete(pending) {
   if (!pending) return;
   clearPendingProjectTimers(pending);
   if (state.pendingProjectDelete === pending) state.pendingProjectDelete = null;
-  hideUndoToast();
+  renderUndoToasts();
   try {
     await invoke("delete_project", { projectPath: pending.projectPath });
     const wasSelected = state.selectedProjectPath === pending.projectPath;
@@ -2807,9 +2918,7 @@ function initDomRefs() {
     aboutButton: "#about-button",
     aboutDialog: "#about-dialog",
     aboutCloseButton: "#about-close",
-    toast: "#undo-toast",
-    toastMessage: "#undo-toast-message",
-    toastUndoButton: "#undo-toast-undo",
+    toastViewport: "#undo-toast-viewport",
     projectDeleteDialog: "#project-delete-dialog",
     projectDeleteForm: "#project-delete-form",
     projectDeleteImpact: "#project-delete-impact",
@@ -2972,7 +3081,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   refs.ctxMenu?.addEventListener("contextmenu", (e) => e.preventDefault());
 
-  hideUndoToast();
+  renderUndoToasts();
   state.hideSystemEvents = true;
   state.hideToolEvents = true;
   state.hideThinkingEvents = true;
@@ -2987,4 +3096,3 @@ window.addEventListener("DOMContentLoaded", async () => {
   clearViewer();
   await loadProjects();
 });
-
