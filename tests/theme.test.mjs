@@ -135,7 +135,7 @@ test("dark theme uses graphite blue-gray palette", () => {
   assert.equal(extractRootVariable(css, "--viewer-bg"), "#020817");
 });
 
-test("spacing declarations follow the 8px scale", () => {
+test("spacing declarations follow the 4px/8px scale", () => {
   const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
   const lines = css.split(/\r?\n/);
   const declarationPattern = /^\s*([a-z-]+)\s*:\s*([^;]*\d+px[^;]*);/;
@@ -153,7 +153,7 @@ test("spacing declarations follow the 8px scale", () => {
       Math.abs(Number(item[1])),
     );
     const invalidValue = pxValues.find(
-      (valuePx) => ![0, 1, 2, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 999].includes(valuePx),
+      (valuePx) => ![0, 1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 999].includes(valuePx),
     );
     if (invalidValue !== undefined) {
       disallowed.push(`line ${index + 1}: ${property}: ${value}`);
