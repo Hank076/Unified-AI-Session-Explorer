@@ -1,86 +1,118 @@
 # Unified AI Session Explorer
 
-A high-performance, privacy-focused desktop application built with **Tauri 2** and **Rust** to visualize and explore your local Claude project history.
+Languages: [English](./README.md) | [繁體中文](./README.zh-Hant.md)
 
-## 🚀 Overview
+Unified AI Session Explorer is a local-first desktop app built with Tauri 2, Rust, and vanilla JavaScript for browsing Claude session history stored in `~/.claude/projects`.
 
-Claude saves its project sessions, memory files, and subagent logs locally in `.jsonl` format. **Unified AI Session Explorer** provides a clean, professional interface to browse these records, complete with a structured timeline, tool-use binding, and session metadata statistics.
+It is designed for people who want a faster and safer way to inspect local AI workspaces without uploading session data to a third-party service.
 
-## 🔒 Privacy First
+## ✨ Highlights
 
-Your data is your own. **Unified AI Session Explorer** is designed with a "Local-Only" philosophy:
-- **No Cloud Sync**: We do not upload your logs to any server.
-- **Offline Processing**: All parsing is done locally by the Rust backend.
-- **Direct Access**: The app reads directly from your local filesystem without creating copies in hidden databases.
-- **Transparency**: As an open-source tool, you can verify exactly how your data is handled.
+- Local-first by default. Session data stays on your machine.
+- Rust backend for directory traversal, JSONL parsing, and path validation.
+- Timeline viewer for conversations, tool activity, thinking blocks, and system events.
+- Tree view for parent sessions and subagent sessions.
+- Built-in project and message search.
+- Safe deletion flow with project impact preview and session undo window.
+- Bilingual UI: `en-US` and `zh-Hant-TW`.
+- Theme modes: `auto`, `light`, and `dark`.
 
-## ✨ Key Features
+## 🧩 Current Features
 
-- **Project Explorer**: Effortlessly browse all projects located in:
-  - **macOS/Linux**: `~/.claude/projects`
-  - **Windows**: `%USERPROFILE%\.claude\projects`
-- **Session Timeline**: Visualize complex `.jsonl` logs as an intuitive chat interface.
-- **Tool-Use Binding**: Automatically correlates `tool_use` calls with their corresponding `tool_result` into a single, unified card.
-- **Session Metadata**: Instant visibility into Model names, Token usage (Input/Output), and session duration.
-- **Technical Event Grouping**: Consolidates background system events (progress, shell commands, etc.) to keep the conversation focused.
-- **Multi-language Support**: Managed via `src/i18n.js` (English & Traditional Chinese).
-- **Theme Support**: Dark/Light modes handled via `src/theme.js` and CSS variables.
+- Browse Claude projects detected from `~/.claude/projects`.
+- Infer a readable project name from the original working directory when available.
+- Open sessions and memory files from the same project workspace.
+- Display session metadata including model, token usage, web tool usage, and estimated duration.
+- Keep `tool_use` and `tool_result` content grouped in a readable timeline.
+- Toggle visibility for system events, tool calls, and thinking content independently.
+- Search across the project list and within the selected timeline.
+- Show subagent sessions under their parent session with expand/collapse controls.
+- Open the project folder from the context menu.
+- Copy session IDs from the session context menu.
+- Preview delete impact before removing a project.
+- Queue session deletion with a short undo grace period.
 
-## 🛠️ Tech Stack
+## 📸 Screenshots
 
-- **Backend**: Rust (Tauri 2) - High-performance file I/O and JSONL parsing.
-- **Frontend**: Vanilla HTML5, CSS3, and ES6+ JavaScript - Lightweight and **framework-free**.
-- **Data Source**: Direct access to local Claude project directories.
+![Main Window Placeholder](./screenshots/main-window-placeholder.png)
 
-## 🚦 Getting Started
+## 🛠 Tech Stack
+
+- Desktop shell: Tauri 2
+- Backend: Rust 2021
+- Frontend: vanilla HTML, CSS, and ESM JavaScript
+- Test stack: `node --test`, JSDOM, Rust unit tests
+
+## 📁 Project Layout
+
+```text
+src/         Frontend app (HTML, CSS, JS, i18n, theme logic)
+src-tauri/   Rust backend, Tauri commands, packaging config
+tests/       Frontend unit tests and JSDOM UI tests
+docs/        Product and UI notes
+```
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v22+)
-- [Rust](https://www.rust-lang.org/) (Stable toolchain)
-- Tauri Prerequisites (See [Tauri Docs](https://tauri.app/start/prerequisites/))
+- Node.js 22 or later
+- Rust stable toolchain
+- Tauri system prerequisites: https://tauri.app/start/prerequisites/
 
-### Installation & Run
+### Install Dependencies
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Hank076/Unified-AI-Session-Explorer.git
-   cd Unified-AI-Session-Explorer
-   ```
+```bash
+npm install
+```
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+### Run In Desktop Mode
 
-3. Start development mode:
-   ```bash
-   # Run with Tauri container
-   npm run tauri dev
+```bash
+npm run tauri dev
+```
 
-   # Run web version only (requires http-server)
-   npm run dev:web
-   ```
+### Run In Browser Preview
 
-4. Run tests:
-   ```bash
-   # Frontend & i18n tests
-   npm test
+```bash
+npm run dev:web
+```
 
-   # Backend tests
-   cargo test --manifest-path src-tauri/Cargo.toml
-   ```
+The browser preview is useful for frontend iteration, but features that depend on Tauri APIs such as local filesystem commands and folder opening require the desktop runtime.
 
-## 📂 Project Structure
+## ✅ Testing
 
-- `src-tauri/`: Rust backend logic, file system commands, and parsing rules.
-- `src/`: Frontend UI assets.
-  - `i18n.js`: Multi-language dictionary and logic.
-  - `theme.js`: Theme switching and persistence.
-  - `main.js`: Main application logic and state management.
-  - `styles.css`: Global styles using CSS variables.
-- `tests/`: Frontend and i18n test suites.
+Run frontend tests:
+
+```bash
+node --test tests/*.mjs
+```
+
+Run focused UI flow checks:
+
+```bash
+npm run test:ui
+```
+
+`test:ui` currently runs a JSDOM-based UI regression suite (not a full real-browser E2E suite), mainly covering delete/undo flows, context menu actions, and timeline visibility toggles.
+
+Run Rust backend tests:
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+## 🔒 Security Model
+
+- The backend validates requested paths and rejects access outside the configured Claude projects root.
+- The default data root is `%USERPROFILE%\\.claude\\projects` on Windows and `~/.claude/projects` on Unix-like systems.
+- Project deletion removes the full project directory tree.
+- Session deletion removes the selected `.jsonl` file and its related subagent directory when present.
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome. Prefer small, focused changes with clear reproduction steps and expected behavior.
 
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+MIT

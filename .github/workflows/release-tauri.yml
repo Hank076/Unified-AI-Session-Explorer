@@ -15,10 +15,16 @@ jobs:
         include:
           - platform: ubuntu-22.04
             args: ""
+            uploadPlainBinary: false
           - platform: windows-latest
             args: ""
+            uploadPlainBinary: false
+          - platform: windows-latest
+            args: "--no-bundle"
+            uploadPlainBinary: true
           - platform: macos-latest
             args: ""
+            uploadPlainBinary: false
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -72,3 +78,4 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+          uploadPlainBinary: ${{ matrix.uploadPlainBinary }}

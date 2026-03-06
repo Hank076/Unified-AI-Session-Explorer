@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tracelens_lib::run()
+    unified_ai_session_explorer_lib::run()
 }
