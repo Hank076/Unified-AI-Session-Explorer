@@ -49,8 +49,12 @@ src-tauri/gen/
 *.sln
 *.sw?
 
-GEMINI.md
 docs/
-.agent/
-.codex/
 
+#AI
+GEMINI.md
+CLAUDE.md
+AGENTS.md
+.gemini/
+.claude/
+.codex/
