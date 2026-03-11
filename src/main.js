@@ -43,6 +43,9 @@ const state = {
   themeMode: "auto",
   resolvedTheme: "dark",
   locale: "en-US",
+  sourceToggles: { claude: true, codex: true },
+  allClaudeProjects: [],
+  allCodexProjects: [],
   pendingSessionDeletes: [],
   pendingSessionDeleteCandidate: null,
   pendingProjectDelete: null,
@@ -59,6 +62,9 @@ const refs = {
   resizerMiddle: null,
   projectsList: null,
   projectsSearchInput: null,
+  sourceToggleWrap: null,
+  sourceToggleClaude: null,
+  sourceToggleCodex: null,
   entriesList: null,
   viewerTitle: null,
   viewerMeta: null,
@@ -993,6 +999,18 @@ async function executeProjectDelete(pending) {
   }
 }
 
+function updateSourceToggleUI() {
+  const { claude, codex } = state.sourceToggles;
+  if (refs.sourceToggleClaude) {
+    refs.sourceToggleClaude.dataset.active = claude ? "true" : "false";
+    refs.sourceToggleClaude.setAttribute("aria-pressed", claude ? "true" : "false");
+  }
+  if (refs.sourceToggleCodex) {
+    refs.sourceToggleCodex.dataset.active = codex ? "true" : "false";
+    refs.sourceToggleCodex.setAttribute("aria-pressed", codex ? "true" : "false");
+  }
+}
+
 function renderProjects() {
   refs.projectsList.innerHTML = "";
   const visibleProjects = state.projects.filter((project) =>
@@ -1011,6 +1029,14 @@ function renderProjects() {
     const nameNode = createElement("div", "project-name", displayName);
     const pathNode = createElement("div", "project-path", displayPath);
     button.append(nameNode, pathNode);
+    if (Array.isArray(project.sources) && project.sources.length > 0) {
+      const sourceRow = createElement("div", "project-sources");
+      for (const src of project.sources) {
+        const badge = createElement("span", `source-badge source-badge--${src}`, src === "claude" ? "Claude" : "Codex");
+        sourceRow.appendChild(badge);
+      }
+      button.append(sourceRow);
+    }
     button.title = fullPath;
     button.addEventListener("click", () => selectProject(project.path));
     const row = createElement("div", "list-row");
@@ -1280,6 +1306,12 @@ function createEntryButton(
   const primary = createElement("div", "entry-primary", primaryText);
   const secondary = createElement("div", "entry-secondary", secondaryParts.join(" · "));
   button.append(primary, secondary);
+
+  if (entry.source === "claude" || entry.source === "codex") {
+    const srcLabel = entry.source === "claude" ? tt("source.claude") : tt("source.codex");
+    const badge = createElement("span", `source-badge source-badge--${entry.source}`, srcLabel);
+    primary.appendChild(badge);
+  }
 
   button.title = entry.label;
   if (state.selectedEntryPath === entry.path) button.dataset.active = "true";
@@ -2138,6 +2170,14 @@ function buildTechSummary(event) {
   const raw = event.raw || {};
   const rawType = raw.type || event.eventType || "unknown";
 
+  if (rawType === "event_msg") {
+    const payloadType = raw.payload?.type || "unknown";
+    if (payloadType === "token_count") {
+      return { subtype: payloadType, summary: buildCodexTokenCountSummary(raw.payload) };
+    }
+    return { subtype: payloadType, summary: tt("tech.codexEvent", { subtype: payloadType }) };
+  }
+
   if (rawType === "progress") {
     const dataType = raw.data?.type || "progress";
     if (dataType === "hook_progress") {
@@ -2196,11 +2236,133 @@ function buildTechSummary(event) {
   };
 }
 
+function getCodexChatRole(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const outerType = raw.type;
+  const payloadType = raw.payload?.type;
+  if (outerType === "response_item" && payloadType === "message") {
+    const r = raw.payload?.role;
+    if (r === "user" || r === "assistant") return r;
+  }
+  return null;
+}
+
+function extractCodexChatText(raw) {
+  const outerType = raw.type;
+  const payloadType = raw.payload?.type;
+  const payload = raw.payload;
+  if (!payload) return "";
+  if (outerType === "event_msg" && (payloadType === "user_message" || payloadType === "agent_message")) {
+    return String(payload.message || "");
+  }
+  if (outerType === "response_item" && payloadType === "message") {
+    const content = payload.content;
+    if (Array.isArray(content)) {
+      const textItem = content.find(
+        (item) => item?.type === "output_text" || item?.type === "input_text" || item?.type === "text",
+      );
+      return String(textItem?.text || "");
+    }
+  }
+  return "";
+}
+
+function isCodexThinkingEvent(raw) {
+  if (!raw || typeof raw !== "object") return false;
+  return raw.type === "response_item" && raw.payload?.type === "reasoning";
+}
+
+function buildCodexTokenCountSummary(payload) {
+  const toK = (n) => {
+    if (typeof n !== "number") return "?";
+    return `${(n / 1000).toFixed(1)}K`;
+  };
+  const fmtUnix = (ts) => {
+    if (typeof ts !== "number" && typeof ts !== "string") return "?";
+    const d = new Date(typeof ts === "number" ? ts * 1000 : ts);
+    if (isNaN(d.getTime())) return String(ts);
+    const pad = (x) => String(x).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+  const fmtUsageLine = (label, usage) => {
+    if (!usage) return null;
+    let s = `${label}: ↓ ${toK(usage.input_tokens)} ↑ ${toK(usage.output_tokens)}`;
+    if (usage.cached_input_tokens) s += ` ${tt("codex.tokenCount.cache")}: ${toK(usage.cached_input_tokens)}`;
+    if (usage.reasoning_output_tokens) s += ` ${tt("codex.tokenCount.reasoning")}: ${toK(usage.reasoning_output_tokens)}`;
+    return s;
+  };
+
+  const primary = payload?.rate_limits?.primary;
+  const lastUsage = payload?.info?.last_token_usage;
+  const totalUsage = payload?.info?.total_token_usage;
+  const lines = [];
+
+  if (primary) {
+    const pct = typeof primary.used_percent === "number" ? `${primary.used_percent}%` : null;
+    const time = primary.resets_at != null ? fmtUnix(primary.resets_at) : null;
+    if (pct || time) {
+      lines.push(tt("codex.tokenCount.rateLine", { pct: pct ?? "?", time: time ?? "?" }));
+    }
+  }
+
+  const lastLine = fmtUsageLine(tt("codex.tokenCount.lastUsage"), lastUsage);
+  if (lastLine) lines.push(lastLine);
+
+  const totalLine = fmtUsageLine(tt("codex.tokenCount.totalUsage"), totalUsage);
+  if (totalLine) lines.push(totalLine);
+
+  return lines.length > 0 ? lines.join("\n") : tt("tech.generic", { type: "token_count" });
+}
+
+function buildCodexFunctionCallDetail(payload) {
+  if (!payload) return null;
+  const pType = payload.type;
+  const toolName = String(payload.name || "unknown");
+
+  let args = {};
+  const rawArgs = pType === "function_call" ? payload.arguments : payload.input;
+  if (typeof rawArgs === "string") {
+    try { args = JSON.parse(rawArgs); } catch { args = { input: rawArgs }; }
+  } else if (rawArgs && typeof rawArgs === "object") {
+    args = rawArgs;
+  }
+
+  if (toolName === "shell" || toolName === "shell_command") {
+    const command = typeof args.command === "string" ? args.command.trim() : "";
+    return {
+      toolName,
+      title: tt("tool.codex.shell.title"),
+      lines: command ? [tt("tool.label.command", { text: command })] : [tt("tool.fallback.default")],
+    };
+  }
+
+  if (toolName === "apply_patch") {
+    const patch = typeof args.patch === "string" ? args.patch.trim() : "";
+    const preview = patch ? patch.split("\n").slice(0, 4).join("\n") : "";
+    return {
+      toolName,
+      title: tt("tool.codex.applyPatch.title"),
+      lines: preview ? [preview] : [tt("tool.fallback.default")],
+    };
+  }
+
+  const lines = Object.entries(args)
+    .slice(0, 3)
+    .map(([k, v]) => `${k}: ${typeof v === "string" ? v.slice(0, 120) : JSON.stringify(v).slice(0, 120)}`);
+
+  return {
+    toolName,
+    title: tt("tool.default.title", { name: toolName }),
+    lines: lines.length > 0 ? lines : [tt("tool.fallback.default")],
+  };
+}
+
 function normalizeEvents(events) {
   const normalized = [];
   const toolResultsMap = new Map();
   const consumedResultIds = new Set();
   const localCommandStdoutMap = new Map();
+  const codexFunctionOutputMap = new Map();
 
   // 第一階段：預掃描所有 tool_result 與 local-command-stdout 關聯
   for (const event of events) {
@@ -2228,6 +2390,14 @@ function normalizeEvents(events) {
         localCommandStdoutMap.set(parentUuid, localCommandStdout);
       }
     }
+    // 預掃描 Codex function_call_output / custom_tool_call_output，以 call_id 建立 map
+    if (raw.type === "response_item") {
+      const pType = raw.payload?.type;
+      if (pType === "function_call_output" || pType === "custom_tool_call_output") {
+        const callId = raw.payload?.call_id;
+        if (callId) codexFunctionOutputMap.set(callId, raw.payload);
+      }
+    }
   }
 
   // 第二階段：正規化事件
@@ -2235,6 +2405,7 @@ function normalizeEvents(events) {
     const raw = event.raw || {};
     const rawType = raw.type || event.eventType || "unknown";
     const role = raw.message?.role;
+    const codexRole = getCodexChatRole(raw);
     const contentItems = normalizeContentItems(raw.message?.content || raw.content);
     const parentUuid = String(
       event.parentUuid || raw.parentUuid || event.logicalParentUuid || raw.logicalParentUuid || "",
@@ -2261,11 +2432,35 @@ function normalizeEvents(events) {
     const roleType =
       rawType === "tool_result" || hasToolResultContent
         ? "assistant"
-        : role === "user" || role === "assistant"
-          ? role
-          : rawType;
+        : codexRole !== null
+          ? codexRole
+          : role === "user" || role === "assistant"
+            ? role
+            : rawType;
 
     if (roleType === "user" || roleType === "assistant") {
+      // Codex events: extract text directly from payload
+      if (codexRole !== null) {
+        const codexText = extractCodexChatText(raw);
+        normalized.push({
+          kind: roleType === "user" ? "chat_user" : "chat_assistant",
+          source: "codex",
+          line: event.line,
+          timestamp: event.timestamp,
+          title: roleType === "user" ? tt("chat.user") : tt("chat.codex"),
+          headerModel: "",
+          summary: codexText,
+          conversationSummary: codexText,
+          conversationToolSummary: "",
+          tags: [],
+          thinkingDetails: [],
+          toolUseDetails: [],
+          toolResultDetails: [],
+          raw,
+        });
+        continue;
+      }
+
       const text = extractTextSummary(raw, toolResultsMap);
       const eventUuid = String(event.uuid || raw.uuid || "").trim();
       const correlatedLocalStdout = eventUuid ? localCommandStdoutMap.get(eventUuid) : "";
@@ -2281,6 +2476,7 @@ function normalizeEvents(events) {
       }
       normalized.push({
         kind: roleType === "user" ? "chat_user" : "chat_assistant",
+        source: "claude",
         line: event.line,
         timestamp: event.timestamp,
         title: roleType === "user" ? tt("chat.user") : tt("chat.assistant"),
@@ -2302,6 +2498,70 @@ function normalizeEvents(events) {
         raw: raw,
       });
       continue;
+    }
+
+    // Codex thinking events → show as assistant bubble with encrypted notice
+    if (isCodexThinkingEvent(raw)) {
+      normalized.push({
+        kind: "chat_assistant",
+        source: "codex",
+        line: event.line,
+        timestamp: event.timestamp,
+        title: tt("chat.codex"),
+        headerModel: "",
+        summary: "",
+        conversationSummary: "",
+        conversationToolSummary: "",
+        tags: ["thinking"],
+        thinkingDetails: [tt("codex.thinking.encrypted")],
+        toolUseDetails: [],
+        toolResultDetails: [],
+        raw,
+      });
+      continue;
+    }
+
+    // Codex function_call / custom_tool_call → 視為工具呼叫，渲染為 assistant bubble
+    if (rawType === "response_item") {
+      const pType = raw.payload?.type;
+      if (pType === "function_call" || pType === "custom_tool_call") {
+        const callId = raw.payload?.call_id;
+        const outputPayload = callId ? codexFunctionOutputMap.get(callId) : null;
+        const detail = buildCodexFunctionCallDetail(raw.payload);
+        const toolName = String(raw.payload?.name || "unknown");
+        const toolResultDetails = [];
+        if (outputPayload) {
+          const outputText = String(outputPayload.output || "").trim();
+          if (outputText) {
+            toolResultDetails.push({
+              title: tt("tool.result.title", { index: 1 }),
+              lines: [outputText],
+            });
+          }
+        }
+        normalized.push({
+          kind: "chat_assistant",
+          source: "codex",
+          line: event.line,
+          timestamp: event.timestamp,
+          title: tt("chat.codex"),
+          headerModel: "",
+          summary: tt("summary.toolTags", { names: toolName }),
+          conversationSummary: "",
+          conversationToolSummary: tt("summary.toolTags", { names: toolName }),
+          tags: [`tool:${toolName}`],
+          thinkingDetails: [],
+          toolUseDetails: detail ? [detail] : [],
+          toolResultDetails,
+          raw,
+        });
+        continue;
+      }
+      // function_call_output / custom_tool_call_output 已被合併至對應的 function_call 卡片，略過
+      if (pType === "function_call_output" || pType === "custom_tool_call_output") {
+        const callId = raw.payload?.call_id;
+        if (callId && codexFunctionOutputMap.has(callId)) continue;
+      }
     }
 
     const tech = buildTechSummary(event);
@@ -2607,7 +2867,7 @@ function renderTechGroup(group) {
       ...viewState,
       expanded: !viewState.expanded,
     };
-    renderTimelineView();
+    renderTimelineView(true);
   });
   header.append(headBtn);
 
@@ -2644,7 +2904,7 @@ function renderTechGroup(group) {
         ...viewState,
         visibleCount: Math.min(group.events.length, viewState.visibleCount + TECH_PREVIEW_COUNT),
       };
-      renderTimelineView();
+      renderTimelineView(true);
     });
     body.append(more);
   }
@@ -2901,6 +3161,9 @@ function initDomRefs() {
     resizerMiddle: "#resizer-middle",
     projectsList: "#projects-list",
     projectsSearchInput: "#projects-search-input",
+    sourceToggleWrap: "#source-toggle-wrap",
+    sourceToggleClaude: "#source-toggle-claude",
+    sourceToggleCodex: "#source-toggle-codex",
     entriesList: "#entries-list",
     viewerTitle: "#viewer-title",
     viewerMeta: "#viewer-meta",
@@ -2940,10 +3203,60 @@ function initDomRefs() {
   refs.themeButtons = Array.from(document.querySelectorAll(".theme-btn"));
 }
 
+function mergeProjects(claudeProjects, codexProjects) {
+  const merged = new Map(); // normalized cwd → merged project object
+
+  for (const p of claudeProjects) {
+    const key = (p.cwdPath || p.path).replace(/\\/g, "/").toLowerCase().replace(/\/$/, "");
+    merged.set(key, {
+      name: p.name,
+      path: p.path,
+      cwdPath: p.cwdPath,
+      claudePath: p.path,
+      codexCwd: null,
+      modifiedMs: p.modifiedMs,
+      sources: ["claude"],
+    });
+  }
+
+  for (const p of codexProjects) {
+    const key = (p.cwdPath || p.path).replace(/\\/g, "/").toLowerCase().replace(/\/$/, "");
+    if (merged.has(key)) {
+      const existing = merged.get(key);
+      existing.codexCwd = p.cwdPath || p.path;
+      existing.sources.push("codex");
+      if ((p.modifiedMs || 0) > (existing.modifiedMs || 0)) {
+        existing.modifiedMs = p.modifiedMs;
+      }
+    } else {
+      merged.set(key, {
+        name: p.name,
+        path: p.cwdPath || p.path,
+        cwdPath: p.cwdPath,
+        claudePath: null,
+        codexCwd: p.cwdPath || p.path,
+        modifiedMs: p.modifiedMs,
+        sources: ["codex"],
+      });
+    }
+  }
+
+  return Array.from(merged.values()).sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0));
+}
+
 async function loadProjects() {
   setInfoStatus("status.loadingProjects");
   try {
-    state.projects = await invoke("list_projects");
+    const [claudeProjects, codexProjects] = await Promise.all([
+      invoke("list_projects").catch(() => []),
+      invoke("list_codex_projects").catch(() => []),
+    ]);
+    state.allClaudeProjects = claudeProjects;
+    state.allCodexProjects = codexProjects;
+    state.projects = mergeProjects(
+      state.sourceToggles.claude ? claudeProjects : [],
+      state.sourceToggles.codex ? codexProjects : [],
+    );
     renderProjects();
     setInfoStatus("status.projectsLoaded", { count: state.projects.length });
   } catch (errorCode) {
@@ -2957,10 +3270,26 @@ async function selectProject(projectPath) {
   renderProjects();
   setInfoStatus("status.loadingEntries");
 
+  const project = findSelectedProject();
+
   try {
-    state.entries = await invoke("list_project_entries", {
-      projectPath,
-    });
+    const fetches = [];
+    if (project?.claudePath && state.sourceToggles.claude) {
+      fetches.push(invoke("list_project_entries", { projectPath: project.claudePath }));
+    } else {
+      fetches.push(Promise.resolve([]));
+    }
+    if (project?.codexCwd && state.sourceToggles.codex) {
+      fetches.push(invoke("list_codex_project_entries", { cwd: project.codexCwd }));
+    } else {
+      fetches.push(Promise.resolve([]));
+    }
+
+    const [claudeEntries, codexEntries] = await Promise.all(fetches);
+    const all = [...claudeEntries, ...codexEntries];
+    all.sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0));
+
+    state.entries = all;
     state.entryExpandState = {};
     for (const entry of state.entries) {
       if (entry.entryType === "subagent_session" && entry.parentSession) {
@@ -2995,10 +3324,9 @@ async function selectEntry(entry) {
       return;
     }
 
-    const payload = await invoke("read_session_timeline", {
-      sessionPath: entry.path,
-      strictMode: true,
-    });
+    const payload = entry.source === "codex"
+      ? await invoke("read_codex_session_timeline", { sessionPath: entry.path })
+      : await invoke("read_session_timeline", { sessionPath: entry.path, strictMode: true });
     setHideSystemEventsVisible(true);
     renderTimeline(payload);
     if (payload.errorCode) {
@@ -3022,6 +3350,25 @@ window.addEventListener("DOMContentLoaded", async () => {
       setThemeMode(button.dataset.themeMode, { persist: true });
     });
   }
+
+  bindClick(refs.sourceToggleClaude, () => {
+    state.sourceToggles.claude = !state.sourceToggles.claude;
+    updateSourceToggleUI();
+    state.projects = mergeProjects(
+      state.sourceToggles.claude ? state.allClaudeProjects : [],
+      state.sourceToggles.codex ? state.allCodexProjects : [],
+    );
+    renderProjects();
+  });
+  bindClick(refs.sourceToggleCodex, () => {
+    state.sourceToggles.codex = !state.sourceToggles.codex;
+    updateSourceToggleUI();
+    state.projects = mergeProjects(
+      state.sourceToggles.claude ? state.allClaudeProjects : [],
+      state.sourceToggles.codex ? state.allCodexProjects : [],
+    );
+    renderProjects();
+  });
 
   bindInputText(refs.projectsSearchInput, (value) => {
     state.projectSearchQuery = value;
@@ -3094,5 +3441,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   initColumnResizers();
 
   clearViewer();
+  updateSourceToggleUI();
   await loadProjects();
 });
