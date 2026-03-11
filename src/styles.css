@@ -1,6 +1,6 @@
 :root {
   --col-left: 280px;
-  --col-middle: 260px;
+  --col-middle: 312px;
   --font-main: "Inter", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", monospace;
   --font-title: "Space Grotesk", "Inter", sans-serif;
@@ -1710,6 +1710,7 @@ details summary:focus-visible,
   margin-top: 8px;
   font-size: 13px;
   color: var(--control-text);
+  white-space: pre-line;
 }
 
 .load-more-btn {
@@ -1800,4 +1801,96 @@ body.resizing-columns {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Source toggle pills */
+.source-toggle-wrap {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 4px;
+}
+
+.source-toggle-btn {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+/* Claude brand: bg #faf9f5 (warm cream), fg #d97757 (coral) */
+.source-toggle-btn[data-source="claude"][data-active="true"] {
+  background: #faf9f5;
+  color: #d97757;
+  border-color: #d97757;
+}
+
+/* Codex brand: bg #f9f9f9 (near-white), fg #0d0d0d (near-black) */
+.source-toggle-btn[data-source="codex"][data-active="true"] {
+  background: #f9f9f9;
+  color: #0d0d0d;
+  border-color: #0d0d0d;
+}
+
+/* dark mode: flip fg/bg roles for legibility */
+[data-theme="dark"] .source-toggle-btn[data-source="claude"][data-active="true"] {
+  background: #3a1c0a;
+  color: #d97757;
+  border-color: #d97757;
+}
+
+[data-theme="dark"] .source-toggle-btn[data-source="codex"][data-active="true"] {
+  background: #1a1a1a;
+  color: #f9f9f9;
+  border-color: #f9f9f9;
+}
+
+/* Source badge on session entries, project list, and chat bubbles */
+.source-badge {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+/* Claude brand: bg #faf9f5, fg #d97757 */
+.source-badge--claude {
+  background: #faf9f5;
+  color: #d97757;
+  border: 1px solid #d97757;
+}
+
+[data-theme="dark"] .source-badge--claude {
+  background: #3a1c0a;
+  color: #d97757;
+  border-color: #d97757;
+}
+
+/* Codex brand: bg #f9f9f9, fg #0d0d0d */
+.source-badge--codex {
+  background: #f9f9f9;
+  color: #0d0d0d;
+  border: 1px solid #0d0d0d;
+}
+
+[data-theme="dark"] .source-badge--codex {
+  background: #1a1a1a;
+  color: #f9f9f9;
+  border-color: #f9f9f9;
+}
+
+.project-sources {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
 }
