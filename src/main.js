@@ -855,6 +855,7 @@ function queueSessionDelete(entry) {
 
   const pending = {
     path: entry.path,
+    source: entry.source || "claude",
     label: String(entry.label || ""),
     projectPath: state.selectedProjectPath,
     hiddenPaths: removedPaths,
@@ -877,7 +878,11 @@ async function executeSessionDelete(pending) {
   state.pendingSessionDeletes = state.pendingSessionDeletes.filter((item) => item !== pending);
   renderUndoToasts();
   try {
-    await invoke("delete_session", { sessionPath: pending.path });
+    if (pending.source === "codex") {
+      await invoke("delete_codex_session", { sessionPath: pending.path });
+    } else {
+      await invoke("delete_session", { sessionPath: pending.path });
+    }
     await refreshEntriesIfProjectSelected(pending.projectPath);
     setInfoStatus("status.sessionDeleted");
   } catch (errorCode) {

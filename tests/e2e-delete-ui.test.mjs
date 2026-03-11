@@ -50,6 +50,15 @@ function createMockInvoke() {
       modifiedMs: Date.now(),
       sizeBytes: 44,
     },
+    {
+      entryType: "session",
+      label: "codex-session.jsonl",
+      path: "C:/Users/mock/.codex/sessions/2026/03/codex-session.jsonl",
+      parentSession: null,
+      modifiedMs: Date.now() - 2000,
+      sizeBytes: 200,
+      source: "codex",
+    },
   ];
 
   const invoke = async (cmd, args = {}) => {
@@ -223,6 +232,7 @@ function createMockInvoke() {
       return { path: args.memoryPath, content: "mock-memory" };
     }
     if (cmd === "delete_session") return null;
+    if (cmd === "delete_codex_session") return null;
     if (cmd === "delete_project") return null;
     throw new Error(`Unhandled command: ${cmd}`);
   };
@@ -409,10 +419,12 @@ test("multiple session deletes keep separate undo toasts", async () => {
   const remainingToasts = [...toastViewport.querySelectorAll(".undo-toast")];
   assert.equal(remainingToasts.length, 1);
   assert.equal(mock.calls.some((call) => call.cmd === "delete_session"), false);
-  const visibleSessionButtons = [
+  // 只計算非 Codex 的 sessions（Codex session 不在本次刪除範圍內）
+  const visibleClaudeSessionButtons = [
     ...window.document.querySelectorAll('.entry-btn[data-entry-type="session"]'),
-  ].map((el) => el.textContent || "");
-  assert.equal(visibleSessionButtons.length, 1, JSON.stringify(visibleSessionButtons));
+  ].filter((el) => !el.querySelector('.source-badge--codex'))
+    .map((el) => el.textContent || "");
+  assert.equal(visibleClaudeSessionButtons.length, 1, JSON.stringify(visibleClaudeSessionButtons));
 
   const finalUndo = remainingToasts[0].querySelector(".undo-toast-btn");
   finalUndo.click();
@@ -721,6 +733,56 @@ test("context menu closes on Escape key", async () => {
   await new Promise((resolve) => setTimeout(resolve, 10));
 
   assert.equal(menu.hidden, true, "menu should be hidden after Escape");
+
+  app.cleanup();
+});
+
+test("codex session delete calls delete_codex_session, not delete_session", async () => {
+  const app = await setupApp();
+  const { window, mock } = app;
+
+  const projectButton = window.document.querySelector(".project-btn");
+  assert.ok(projectButton);
+  projectButton.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  // 找到 source=codex 的 entry button (title 設為 entry.label)
+  const codexEntryBtn = window.document.querySelector('.entry-btn[title="codex-session.jsonl"]');
+  assert.ok(codexEntryBtn, "codex session entry button should exist");
+
+  codexEntryBtn.dispatchEvent(
+    new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const deleteMenuItem = [...window.document.querySelectorAll(".ctx-menu-item")]
+    .find((el) => /delete|刪除/i.test(el.textContent));
+  assert.ok(deleteMenuItem, "context menu should have a delete item");
+  deleteMenuItem.click();
+
+  const sessionDialog = window.document.querySelector("#session-delete-dialog");
+  assert.equal(sessionDialog.open, true);
+
+  const confirm = window.document.querySelector("#session-delete-confirm");
+  confirm.click();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  // 確認 undo toast 出現，且尚未呼叫後端
+  assert.equal(mock.calls.some((call) => call.cmd === "delete_codex_session"), false);
+  assert.equal(mock.calls.some((call) => call.cmd === "delete_session"), false);
+
+  const toastViewport = window.document.querySelector("#undo-toast-viewport");
+  assert.equal(toastViewport.hidden, false);
+
+  // 點擊 undo 清除計時器，避免 8000ms timer 拖延測試
+  const undo = toastViewport.querySelector(".undo-toast-btn");
+  assert.ok(undo, "undo button should exist");
+  undo.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  // undo 後不應呼叫任何刪除命令
+  assert.equal(mock.calls.some((call) => call.cmd === "delete_codex_session"), false);
+  assert.equal(mock.calls.some((call) => call.cmd === "delete_session"), false);
 
   app.cleanup();
 });

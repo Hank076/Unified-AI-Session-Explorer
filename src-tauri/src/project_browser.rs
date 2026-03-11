@@ -451,6 +451,31 @@ pub fn delete_session(session_path: String, base_path: Option<String>) -> Result
 }
 
 #[tauri::command]
+pub fn delete_codex_session(session_path: String, base_path: Option<String>) -> Result<(), String> {
+    let root = if let Some(path) = base_path {
+        let p = PathBuf::from(path);
+        if !p.exists() {
+            return Err(ERR_NOT_FOUND.to_string());
+        }
+        p.canonicalize().map_err(map_read_error)?
+    } else {
+        default_codex_sessions_path()?.canonicalize().map_err(map_read_error)?
+    };
+    let canonical = Path::new(&session_path).canonicalize().map_err(map_read_error)?;
+    if !canonical.starts_with(&root) {
+        return Err(ERR_READ_FAILED.to_string());
+    }
+    if !canonical.is_file() {
+        return Err(ERR_NOT_FOUND.to_string());
+    }
+    if !has_jsonl_extension(&canonical) {
+        return Err(ERR_READ_FAILED.to_string());
+    }
+    fs::remove_file(&canonical).map_err(map_read_error)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn delete_project(project_path: String, base_path: Option<String>) -> Result<(), String> {
     let root = resolve_root_path(base_path.as_deref())?;
     let project_dir = validate_under_root(&root, Path::new(&project_path))?;
@@ -1408,6 +1433,42 @@ mod tests {
         assert!(impact.total_size_bytes > 0);
 
         fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn delete_codex_session_removes_file() {
+        let root = unique_temp_dir("delete-codex-session");
+        let day_dir = root.join("2026").join("03");
+        fs::create_dir_all(&day_dir).expect("create day dir");
+        let session = day_dir.join("session.jsonl");
+        write_file(&session, "{\"type\":\"session_meta\"}\n");
+
+        delete_codex_session(
+            session.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+        )
+        .expect("delete codex session");
+
+        assert!(!session.exists());
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn delete_codex_session_rejects_path_outside_root() {
+        let root = unique_temp_dir("delete-codex-outside");
+        let other = unique_temp_dir("delete-codex-other");
+        let session = other.join("evil.jsonl");
+        write_file(&session, "{}\n");
+
+        let result = delete_codex_session(
+            session.to_string_lossy().to_string(),
+            Some(root.to_string_lossy().to_string()),
+        );
+        assert!(result.is_err());
+
+        fs::remove_dir_all(root).expect("cleanup root");
+        fs::remove_dir_all(other).expect("cleanup other");
     }
 
     #[test]
