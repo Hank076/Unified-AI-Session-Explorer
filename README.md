@@ -2,13 +2,14 @@
 
 Languages: [English](./README.md) | [繁體中文](./README.zh-Hant.md)
 
-Unified AI Session Explorer is a local-first desktop app built with Tauri 2, Rust, and vanilla JavaScript for browsing Claude session history stored in `~/.claude/projects`.
+Unified AI Session Explorer is a local-first desktop app built with Tauri 2, Rust, and vanilla JavaScript for browsing AI session history. It currently supports **Claude** (`~/.claude/projects`) and **Codex CLI** (`~/.codex`).
 
 It is designed for people who want a faster and safer way to inspect local AI workspaces without uploading session data to a third-party service.
 
 ## ✨ Highlights
 
 - Local-first by default. Session data stays on your machine.
+- Supports multiple AI sources: **Claude** and **Codex CLI**, with a source toggle to filter by provider.
 - Rust backend for directory traversal, JSONL parsing, and path validation.
 - Timeline viewer for conversations, tool activity, thinking blocks, and system events.
 - Tree view for parent sessions and subagent sessions.
@@ -20,9 +21,13 @@ It is designed for people who want a faster and safer way to inspect local AI wo
 ## 🧩 Current Features
 
 - Browse Claude projects detected from `~/.claude/projects`.
+- Browse Codex CLI projects detected from `~/.codex/sessions`.
+- Source toggle to show all sessions, Claude only, or Codex only.
+- Source badges on project and session list entries to identify the AI provider at a glance.
 - Infer a readable project name from the original working directory when available.
 - Open sessions and memory files from the same project workspace.
 - Display session metadata including model, token usage, web tool usage, and estimated duration.
+- Render Codex session timelines including chat messages, thinking blocks, function calls, and system events.
 - Keep `tool_use` and `tool_result` content grouped in a readable timeline.
 - Toggle visibility for system events, tool calls, and thinking content independently.
 - Search across the project list and within the selected timeline.

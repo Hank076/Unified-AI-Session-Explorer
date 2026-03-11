@@ -2,13 +2,14 @@
 
 語言：[English](./README.md) | [繁體中文](./README.zh-Hant.md)
 
-`Unified AI Session Explorer` 是一個以 Tauri 2、Rust 與原生 JavaScript 打造的本機優先桌面應用，專門用來瀏覽 `~/.claude/projects` 內的 Claude 對話紀錄。
+`Unified AI Session Explorer` 是一個以 Tauri 2、Rust 與原生 JavaScript 打造的本機優先桌面應用，用來瀏覽 AI 對話紀錄。目前支援 **Claude**（`~/.claude/projects`）與 **Codex CLI**（`~/.codex`）。
 
 它的重點不是把資料搬到雲端重新包裝，而是直接在你的本機工作區上，快速、安全地查看專案、Session、Memory 與 Subagent 歷史。
 
 ## ✨ 特色摘要
 
 - 本機優先，不依賴雲端同步。
+- 支援多來源 AI：**Claude** 與 **Codex CLI**，可透過來源切換開關依提供商篩選。
 - Rust 後端負責目錄掃描、JSONL 解析與路徑安全驗證。
 - 以時間軸方式檢視對話、工具呼叫、thinking 區塊與系統事件。
 - 支援父 Session 與 Subagent Session 的樹狀展開。
@@ -20,9 +21,13 @@
 ## 🧩 目前功能
 
 - 掃描並瀏覽 `~/.claude/projects` 下的 Claude 專案。
+- 掃描並瀏覽 `~/.codex/sessions` 下的 Codex CLI 專案。
+- 來源切換開關：可顯示全部、僅 Claude 或僅 Codex 的 Session。
+- 專案與 Session 列表顯示來源徽章，一眼辨識 AI 提供商。
 - 可從 Session 內容推斷原始工作目錄，優先顯示較可讀的專案名稱。
 - 同一介面中查看 Session 與 Memory 檔案。
 - 顯示 Session 中繼資料，例如模型、Token 使用量、Web 工具請求數與估計時長。
+- 渲染 Codex Session 時間軸，包含對話訊息、thinking 區塊、function call 與系統事件。
 - 將 `tool_use` 與 `tool_result` 以較易讀的方式整理在時間軸中。
 - 可獨立切換系統事件、工具呼叫與 thinking 內容的顯示狀態。
 - 支援專案列表搜尋與目前時間軸內容搜尋。
