@@ -1,6 +1,6 @@
 [package]
 name = "unified-ai-session-explorer"
-version = "0.1.0"
+version = "0.3.0"
 description = "A local-first desktop app to browse and analyze AI sessions."
 authors = ["Hank Chen"]
 edition = "2021"
