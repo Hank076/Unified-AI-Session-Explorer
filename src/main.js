@@ -937,6 +937,33 @@ function formatProjectDeleteImpactSummary(impact) {
   });
 }
 
+function recomputeVisibleProjects() {
+  state.projects = mergeProjects(
+    state.sourceToggles.claude ? state.allClaudeProjects : [],
+    state.sourceToggles.codex ? state.allCodexProjects : [],
+  );
+}
+
+function getProjectDeleteTargets(project) {
+  return {
+    projectPath: project?.claudePath || null,
+    codexCwd: project?.codexCwd || null,
+  };
+}
+
+function removeProjectFromSourceCaches(pending) {
+  if (pending.claudePath) {
+    state.allClaudeProjects = state.allClaudeProjects.filter(
+      (project) => project.path !== pending.claudePath,
+    );
+  }
+  if (pending.codexCwd) {
+    state.allCodexProjects = state.allCodexProjects.filter(
+      (project) => (project.cwdPath || project.path) !== pending.codexCwd,
+    );
+  }
+}
+
 async function openProjectDeleteDialog(project) {
   if (
     !refs.projectDeleteDialog ||
@@ -956,7 +983,7 @@ async function openProjectDeleteDialog(project) {
   refs.projectDeleteDialog.showModal();
   refs.projectDeleteInput.focus();
   try {
-    const impact = await invoke("get_project_delete_impact", { projectPath: project.path });
+    const impact = await invoke("get_project_delete_impact", getProjectDeleteTargets(project));
     refs.projectDeleteImpact.textContent = formatProjectDeleteImpactSummary(impact);
   } catch {
     refs.projectDeleteImpact.textContent = tt("project.delete.impactUnavailable");
@@ -989,6 +1016,8 @@ function queueProjectDelete(projectPath) {
   const pending = {
     projectPath,
     projectName: getProjectDisplayName(project),
+    claudePath: project.claudePath || null,
+    codexCwd: project.codexCwd || null,
     timerId: null,
     countdownIntervalId: null,
     totalMs: SESSION_DELETE_UNDO_MS,
@@ -1008,9 +1037,13 @@ async function executeProjectDelete(pending) {
   if (state.pendingProjectDelete === pending) state.pendingProjectDelete = null;
   renderUndoToasts();
   try {
-    await invoke("delete_project", { projectPath: pending.projectPath });
+    await invoke("delete_project", {
+      projectPath: pending.claudePath,
+      codexCwd: pending.codexCwd,
+    });
     const wasSelected = state.selectedProjectPath === pending.projectPath;
-    state.projects = state.projects.filter((project) => project.path !== pending.projectPath);
+    removeProjectFromSourceCaches(pending);
+    recomputeVisibleProjects();
     renderProjects();
     if (wasSelected) {
       state.selectedProjectPath = "";
@@ -3286,10 +3319,7 @@ async function loadProjects() {
     ]);
     state.allClaudeProjects = claudeProjects;
     state.allCodexProjects = codexProjects;
-    state.projects = mergeProjects(
-      state.sourceToggles.claude ? claudeProjects : [],
-      state.sourceToggles.codex ? codexProjects : [],
-    );
+    recomputeVisibleProjects();
     renderProjects();
     setInfoStatus("status.projectsLoaded", { count: state.projects.length });
   } catch (errorCode) {
@@ -3387,19 +3417,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindClick(refs.sourceToggleClaude, () => {
     state.sourceToggles.claude = !state.sourceToggles.claude;
     updateSourceToggleUI();
-    state.projects = mergeProjects(
-      state.sourceToggles.claude ? state.allClaudeProjects : [],
-      state.sourceToggles.codex ? state.allCodexProjects : [],
-    );
+    recomputeVisibleProjects();
     renderProjects();
   });
   bindClick(refs.sourceToggleCodex, () => {
     state.sourceToggles.codex = !state.sourceToggles.codex;
     updateSourceToggleUI();
-    state.projects = mergeProjects(
-      state.sourceToggles.claude ? state.allClaudeProjects : [],
-      state.sourceToggles.codex ? state.allCodexProjects : [],
-    );
+    recomputeVisibleProjects();
     renderProjects();
   });
 

@@ -9,7 +9,7 @@ const INDEX_HTML = path.join(ROOT, "src", "index.html");
 
 function createMockInvoke() {
   const calls = [];
-  const projects = [
+  const claudeProjects = [
     {
       name: "demo-project",
       path: "D:/mock/demo-project",
@@ -17,7 +17,15 @@ function createMockInvoke() {
       modifiedMs: Date.now(),
     },
   ];
-  const entries = [
+  const codexProjects = [
+    {
+      name: "demo-project",
+      path: "D:/mock/demo-project",
+      cwdPath: "D:/mock/demo-project",
+      modifiedMs: Date.now() - 500,
+    },
+  ];
+  const claudeEntries = [
     {
       entryType: "session",
       label: "alpha.jsonl",
@@ -50,6 +58,8 @@ function createMockInvoke() {
       modifiedMs: Date.now(),
       sizeBytes: 44,
     },
+  ];
+  const codexEntries = [
     {
       entryType: "session",
       label: "codex-session.jsonl",
@@ -63,15 +73,17 @@ function createMockInvoke() {
 
   const invoke = async (cmd, args = {}) => {
     calls.push({ cmd, args });
-    if (cmd === "list_projects") return projects;
-    if (cmd === "list_project_entries") return entries;
+    if (cmd === "list_projects") return claudeProjects;
+    if (cmd === "list_codex_projects") return codexProjects;
+    if (cmd === "list_project_entries") return claudeEntries;
+    if (cmd === "list_codex_project_entries") return codexEntries;
     if (cmd === "get_project_delete_impact") {
       return {
-        sessionCount: 1,
+        sessionCount: 2,
         subagentSessionCount: 1,
         memoryFileCount: 1,
-        totalFileCount: 3,
-        totalSizeBytes: 260,
+        totalFileCount: 4,
+        totalSizeBytes: 460,
       };
     }
     if (cmd === "read_session_timeline") {
@@ -240,7 +252,7 @@ function createMockInvoke() {
   return { invoke, calls };
 }
 
-async function setupApp() {
+async function setupApp(options = {}) {
   const html = await fs.readFile(INDEX_HTML, "utf8");
   const dom = new JSDOM(html, { url: "http://localhost/" });
   const { window } = dom;
@@ -265,6 +277,14 @@ async function setupApp() {
       addEventListener: () => {},
       removeEventListener: () => {},
     }));
+  const nativeSetTimeout = setTimeout;
+  window.setTimeout = (callback, delay = 0, ...args) => {
+    if (options.immediateDeleteTimers && delay >= 8000) {
+      return nativeSetTimeout(() => callback(...args), 0);
+    }
+    return nativeSetTimeout(() => callback(...args), delay);
+  };
+  window.clearTimeout = clearTimeout;
   window.requestAnimationFrame = (callback) => setTimeout(callback, 0);
   globalThis.requestAnimationFrame = window.requestAnimationFrame;
 
@@ -332,6 +352,53 @@ test("project delete dialog shows impact and confirms by exact name", async () =
 
   const impactCalls = mock.calls.filter((call) => call.cmd === "get_project_delete_impact");
   assert.equal(impactCalls.length, 1);
+  assert.deepEqual(impactCalls[0].args, {
+    projectPath: "D:/mock/demo-project",
+    codexCwd: "D:/mock/demo-project",
+  });
+  app.cleanup();
+});
+
+test("project delete removes hybrid project without source-toggle resurrection", async () => {
+  const app = await setupApp({ immediateDeleteTimers: true });
+  const { window, mock } = app;
+
+  const projectRow = window.document.querySelector(".project-btn")?.closest(".list-row");
+  assert.ok(projectRow, "project row should exist");
+  projectRow.dispatchEvent(
+    new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const deleteMenuItem = [...window.document.querySelectorAll(".ctx-menu-item")]
+    .find((el) => /delete|刪除/i.test(el.textContent));
+  assert.ok(deleteMenuItem, "context menu should have a delete item");
+  deleteMenuItem.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const input = window.document.querySelector("#project-delete-input");
+  const confirm = window.document.querySelector("#project-delete-confirm");
+  input.value = "demo-project";
+  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  confirm.click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const deleteCalls = mock.calls.filter((call) => call.cmd === "delete_project");
+  assert.equal(deleteCalls.length, 1);
+  assert.deepEqual(deleteCalls[0].args, {
+    projectPath: "D:/mock/demo-project",
+    codexCwd: "D:/mock/demo-project",
+  });
+
+  assert.equal(window.document.querySelector(".project-btn"), null);
+
+  window.document.querySelector("#source-toggle-claude").click();
+  window.document.querySelector("#source-toggle-claude").click();
+  window.document.querySelector("#source-toggle-codex").click();
+  window.document.querySelector("#source-toggle-codex").click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(window.document.querySelector(".project-btn"), null);
   app.cleanup();
 });
 

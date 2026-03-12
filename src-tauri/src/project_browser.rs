@@ -1,7 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use rusqlite::{params_from_iter, Connection, OpenFlags};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Component, Path, PathBuf};
@@ -483,46 +483,160 @@ pub fn delete_codex_session(session_path: String, base_path: Option<String>) -> 
     Ok(())
 }
 
+fn accumulate_project_delete_impact(impact: &mut ProjectDeleteImpact, entries: &[Entry]) {
+    for entry in entries {
+        match entry.entry_type.as_str() {
+            "session" => impact.session_count += 1,
+            "subagent_session" => impact.subagent_session_count += 1,
+            "memory_file" => impact.memory_file_count += 1,
+            _ => {}
+        }
+        impact.total_file_count += 1;
+        impact.total_size_bytes = impact
+            .total_size_bytes
+            .saturating_add(entry.size_bytes.unwrap_or(0));
+    }
+}
+
+fn collect_codex_project_entries_for_delete_impact(
+    cwd: &str,
+    sessions_root: &Path,
+) -> Result<Vec<Entry>, String> {
+    if !sessions_root.exists() {
+        return Ok(vec![]);
+    }
+
+    let canonical_root = sessions_root.canonicalize().map_err(map_read_error)?;
+    Ok(list_codex_project_entries_from_scan(cwd, &canonical_root))
+}
+
+fn delete_codex_project_sessions_in(cwd: &str, sessions_root: &Path) -> Result<(), String> {
+    let entries = collect_codex_project_entries_for_delete_impact(cwd, sessions_root)?;
+    let canonical_root = sessions_root.canonicalize().map_err(map_read_error)?;
+    let mut deleted_paths = HashSet::new();
+
+    for entry in entries {
+        if entry.entry_type != "session" || !deleted_paths.insert(entry.path.clone()) {
+            continue;
+        }
+
+        let session_file = Path::new(&entry.path).canonicalize().map_err(map_read_error)?;
+        if !session_file.starts_with(&canonical_root) {
+            return Err(ERR_READ_FAILED.to_string());
+        }
+        if !session_file.is_file() {
+            continue;
+        }
+        if !has_jsonl_extension(&session_file) {
+            return Err(ERR_READ_FAILED.to_string());
+        }
+
+        fs::remove_file(&session_file).map_err(map_read_error)?;
+    }
+
+    Ok(())
+}
+
+fn delete_codex_project_sessions(cwd: &str) -> Result<(), String> {
+    let sessions_root = default_codex_sessions_path()?;
+    if !sessions_root.exists() {
+        return Ok(());
+    }
+
+    delete_codex_project_sessions_in(cwd, &sessions_root)
+}
+
 #[tauri::command]
-pub fn delete_project(project_path: String, base_path: Option<String>) -> Result<(), String> {
-    let root = resolve_root_path(base_path.as_deref())?;
-    let project_dir = validate_under_root(&root, Path::new(&project_path))?;
-    if !project_dir.is_dir() {
+pub fn delete_project(
+    project_path: Option<String>,
+    codex_cwd: Option<String>,
+    base_path: Option<String>,
+) -> Result<(), String> {
+    let claude_target = project_path.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    let codex_target = codex_cwd.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+
+    if claude_target.is_none() && codex_target.is_none() {
         return Err(ERR_NOT_FOUND.to_string());
     }
 
-    fs::remove_dir_all(project_dir).map_err(map_read_error)?;
+    if let Some(project_path) = claude_target {
+        let root = resolve_root_path(base_path.as_deref())?;
+        let project_dir = validate_under_root(&root, Path::new(&project_path))?;
+        if !project_dir.is_dir() {
+            return Err(ERR_NOT_FOUND.to_string());
+        }
+
+        fs::remove_dir_all(project_dir).map_err(map_read_error)?;
+    }
+
+    if let Some(cwd) = codex_target {
+        delete_codex_project_sessions(&cwd)?;
+    }
+
     Ok(())
 }
 
 #[tauri::command]
 pub fn get_project_delete_impact(
-    project_path: String,
+    project_path: Option<String>,
+    codex_cwd: Option<String>,
     base_path: Option<String>,
 ) -> Result<ProjectDeleteImpact, String> {
-    let entries = list_project_entries(project_path, base_path)?;
-    let mut session_count = 0usize;
-    let mut subagent_session_count = 0usize;
-    let mut memory_file_count = 0usize;
-    let mut total_size_bytes = 0u64;
-
-    for entry in &entries {
-        match entry.entry_type.as_str() {
-            "session" => session_count += 1,
-            "subagent_session" => subagent_session_count += 1,
-            "memory_file" => memory_file_count += 1,
-            _ => {}
+    let claude_target = project_path.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
         }
-        total_size_bytes = total_size_bytes.saturating_add(entry.size_bytes.unwrap_or(0));
+    });
+    let codex_target = codex_cwd.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+
+    if claude_target.is_none() && codex_target.is_none() {
+        return Err(ERR_NOT_FOUND.to_string());
     }
 
-    Ok(ProjectDeleteImpact {
-        session_count,
-        subagent_session_count,
-        memory_file_count,
-        total_file_count: entries.len(),
-        total_size_bytes,
-    })
+    let mut impact = ProjectDeleteImpact {
+        session_count: 0,
+        subagent_session_count: 0,
+        memory_file_count: 0,
+        total_file_count: 0,
+        total_size_bytes: 0,
+    };
+
+    if let Some(project_path) = claude_target {
+        let entries = list_project_entries(project_path, base_path.clone())?;
+        accumulate_project_delete_impact(&mut impact, &entries);
+    }
+
+    if let Some(cwd) = codex_target {
+        let sessions_root = default_codex_sessions_path()?;
+        let entries = collect_codex_project_entries_for_delete_impact(&cwd, &sessions_root)?;
+        accumulate_project_delete_impact(&mut impact, &entries);
+    }
+
+    Ok(impact)
 }
 
 fn build_timeline_event(line: usize, raw: Value) -> TimelineEvent {
@@ -1226,24 +1340,29 @@ fn list_codex_project_entries_from_db(cwd: &str, db_path: &Path) -> rusqlite::Re
 fn list_codex_projects_from_db(db_path: &Path) -> rusqlite::Result<Vec<Project>> {
     let connection = open_codex_database(db_path)?;
     let mut statement = connection.prepare(
-        "SELECT cwd, MAX(updated_at) * 1000 AS modified_ms \
+        "SELECT cwd, rollout_path, updated_at * 1000 AS modified_ms \
          FROM threads \
          WHERE archived = 0 \
            AND cwd IS NOT NULL \
            AND TRIM(cwd) != '' \
-         GROUP BY cwd \
+           AND rollout_path IS NOT NULL \
+           AND TRIM(rollout_path) != '' \
          ORDER BY modified_ms DESC",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
-            to_optional_u64(row.get::<_, Option<i64>>(1)?),
+            row.get::<_, String>(1)?,
+            to_optional_u64(row.get::<_, Option<i64>>(2)?),
         ))
     })?;
 
     let mut deduped: HashMap<String, (String, Option<u64>)> = HashMap::new();
     for row in rows {
-        let (raw_cwd, modified_ms) = row?;
+        let (raw_cwd, rollout_path, modified_ms) = row?;
+        if !Path::new(&rollout_path).exists() {
+            continue;
+        }
         let cwd = display_codex_cwd(&raw_cwd);
         let key = normalize_cwd_for_comparison(&cwd);
         if key.is_empty() {
@@ -1705,7 +1824,8 @@ mod tests {
         write_file(&project.join("nested").join("a.jsonl"), "{\"content\":\"x\"}");
 
         delete_project(
-            project.to_string_lossy().to_string(),
+            Some(project.to_string_lossy().to_string()),
+            None,
             Some(root.to_string_lossy().to_string()),
         )
         .expect("delete project");
@@ -1729,7 +1849,8 @@ mod tests {
         );
 
         let impact = get_project_delete_impact(
-            project.to_string_lossy().to_string(),
+            Some(project.to_string_lossy().to_string()),
+            None,
             Some(root.to_string_lossy().to_string()),
         )
         .expect("get impact");
@@ -1741,6 +1862,76 @@ mod tests {
         assert!(impact.total_size_bytes > 0);
 
         fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn delete_project_removes_matching_codex_sessions() {
+        let sessions_root = unique_temp_dir("delete-project-codex-sessions");
+        let day_dir = sessions_root.join("2026").join("03").join("12");
+        fs::create_dir_all(&day_dir).expect("create day dir");
+        let matching = day_dir.join("match.jsonl");
+        let other = day_dir.join("other.jsonl");
+        write_file(
+            &matching,
+            "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"D:\\\\repo\\\\demo\"}}\n",
+        );
+        write_file(
+            &other,
+            "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"D:\\\\repo\\\\other\"}}\n",
+        );
+
+        delete_codex_project_sessions_in(r"D:\repo\demo", &sessions_root)
+            .expect("delete codex project sessions");
+
+        assert!(!matching.exists());
+        assert!(other.exists());
+
+        fs::remove_dir_all(sessions_root).expect("cleanup");
+    }
+
+    #[test]
+    fn get_project_delete_impact_combines_claude_and_codex_entries() {
+        clear_project_cwd_cache();
+        let claude_root = unique_temp_dir("delete-impact-claude");
+        let project = claude_root.join("demo");
+        fs::create_dir_all(&project).expect("create project");
+        write_file(&project.join("memory").join("MEMORY.md"), "# memory");
+        write_file(&project.join("a.jsonl"), "{\"content\":\"root session\"}");
+        write_file(
+            &project.join("a").join("subagents").join("s1.jsonl"),
+            "{\"content\":\"child\"}",
+        );
+
+        let codex_root = unique_temp_dir("delete-impact-codex-sessions");
+        let day_dir = codex_root.join("2026").join("03").join("12");
+        fs::create_dir_all(&day_dir).expect("create codex day dir");
+        write_file(
+            &day_dir.join("codex-a.jsonl"),
+            "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"D:\\\\repo\\\\demo\"}}\n",
+        );
+        write_file(
+            &day_dir.join("codex-b.jsonl"),
+            "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"D:\\\\repo\\\\demo\"}}\n",
+        );
+
+        let mut impact = get_project_delete_impact(
+            Some(project.to_string_lossy().to_string()),
+            None,
+            Some(claude_root.to_string_lossy().to_string()),
+        )
+        .expect("get claude impact");
+        let codex_entries = collect_codex_project_entries_for_delete_impact(r"D:\repo\demo", &codex_root)
+            .expect("collect codex impact entries");
+        accumulate_project_delete_impact(&mut impact, &codex_entries);
+
+        assert_eq!(impact.session_count, 3);
+        assert_eq!(impact.subagent_session_count, 1);
+        assert_eq!(impact.memory_file_count, 1);
+        assert_eq!(impact.total_file_count, 5);
+        assert!(impact.total_size_bytes > 0);
+
+        fs::remove_dir_all(claude_root).expect("cleanup claude root");
+        fs::remove_dir_all(codex_root).expect("cleanup codex root");
     }
 
     #[test]
@@ -1828,6 +2019,12 @@ mod tests {
         let dir = unique_temp_dir("codex-projects-db");
         let db_path = dir.join("state_5.sqlite");
         build_test_codex_db(&db_path);
+        let rollout_dir = dir.join("rollouts");
+        fs::create_dir_all(&rollout_dir).expect("create rollout dir");
+        let session_one = rollout_dir.join("one.jsonl");
+        let session_two = rollout_dir.join("two.jsonl");
+        write_file(&session_one, "{\"type\":\"session_meta\"}\n");
+        write_file(&session_two, "{\"type\":\"session_meta\"}\n");
         let connection = Connection::open(&db_path).expect("open sqlite db");
 
         connection
@@ -1837,7 +2034,7 @@ mod tests {
                 (
                     "thread-1",
                     r"\\?\D:\repo\demo",
-                    "D:/sessions/one.jsonl",
+                    session_one.to_string_lossy().to_string(),
                     "Session One",
                     "hello",
                     1_i64,
@@ -1852,7 +2049,7 @@ mod tests {
                 (
                     "thread-2",
                     r"D:\repo\demo",
-                    "D:/sessions/two.jsonl",
+                    session_two.to_string_lossy().to_string(),
                     "Session Two",
                     "hello again",
                     2_i64,
@@ -1867,6 +2064,36 @@ mod tests {
         assert_eq!(projects[0].path, r"D:\repo\demo");
         assert_eq!(projects[0].cwd_path.as_deref(), Some(r"D:\repo\demo"));
         assert_eq!(projects[0].modified_ms, Some(20_000));
+
+        drop(connection);
+        fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn test_list_codex_projects_from_db_ignores_missing_rollouts() {
+        let dir = unique_temp_dir("codex-projects-db-missing");
+        let db_path = dir.join("state_5.sqlite");
+        build_test_codex_db(&db_path);
+        let connection = Connection::open(&db_path).expect("open sqlite db");
+
+        connection
+            .execute(
+                "INSERT INTO threads (id, cwd, rollout_path, title, first_user_message, created_at, updated_at, archived)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+                (
+                    "thread-missing",
+                    r"D:\repo\ghost",
+                    dir.join("missing.jsonl").to_string_lossy().to_string(),
+                    "Missing",
+                    "ghost",
+                    1_i64,
+                    10_i64,
+                ),
+            )
+            .expect("insert missing thread");
+
+        let projects = list_codex_projects_from_db(&db_path).expect("list codex projects from db");
+        assert!(projects.is_empty());
 
         drop(connection);
         fs::remove_dir_all(dir).expect("cleanup");
