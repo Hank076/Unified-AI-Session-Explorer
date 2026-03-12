@@ -12,6 +12,7 @@ pub fn run() {
             project_browser::delete_session,
             project_browser::delete_project,
             project_browser::get_project_delete_impact,
+            project_browser::get_codex_project_discovery_mode,
             project_browser::list_codex_projects,
             project_browser::list_codex_project_entries,
             project_browser::read_codex_session_timeline,

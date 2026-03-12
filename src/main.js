@@ -83,6 +83,7 @@ const refs = {
   aboutButton: null,
   aboutDialog: null,
   aboutCloseButton: null,
+  aboutCodexDiscoveryMode: null,
   toastViewport: null,
   projectDeleteDialog: null,
   projectDeleteForm: null,
@@ -823,6 +824,25 @@ function openAboutDialog() {
   refs.aboutDialog.showModal();
 }
 
+function formatCodexProjectDiscoveryMode(payload) {
+  const mode = String(payload?.mode || "unavailable");
+  const detail = String(payload?.detail || "").trim();
+  const label = tt(`about.codexMode.${mode}`);
+  return detail ? `${label} (${detail})` : label;
+}
+
+async function refreshAboutDialog() {
+  if (!refs.aboutCodexDiscoveryMode) return;
+  refs.aboutCodexDiscoveryMode.textContent = tt("about.codexProjectDiscoveryLoading");
+
+  try {
+    const payload = await invoke("get_codex_project_discovery_mode");
+    refs.aboutCodexDiscoveryMode.textContent = formatCodexProjectDiscoveryMode(payload);
+  } catch {
+    refs.aboutCodexDiscoveryMode.textContent = tt("about.codexMode.unavailable");
+  }
+}
+
 function closeAboutDialog() {
   closeDialogIfOpen(refs.aboutDialog);
 }
@@ -1085,6 +1105,13 @@ function formatBytes(sizeBytes) {
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unitIndex]}`;
 }
 
+function getEntryHoverTitle(entry) {
+  const path = String(entry?.path || "").trim();
+  const fileName = path.split(/[\\/]/).pop() || "";
+  if (fileName) return fileName;
+  return String(entry?.label || "");
+}
+
 function findSelectedProject() {
   return state.projects.find((project) => project.path === state.selectedProjectPath) || null;
 }
@@ -1318,7 +1345,7 @@ function createEntryButton(
     primary.appendChild(badge);
   }
 
-  button.title = entry.label;
+  button.title = getEntryHoverTitle(entry);
   if (state.selectedEntryPath === entry.path) button.dataset.active = "true";
   button.addEventListener("click", () => selectEntry(entry));
   return button;
@@ -3186,6 +3213,7 @@ function initDomRefs() {
     aboutButton: "#about-button",
     aboutDialog: "#about-dialog",
     aboutCloseButton: "#about-close",
+    aboutCodexDiscoveryMode: "#about-codex-discovery-mode",
     toastViewport: "#undo-toast-viewport",
     projectDeleteDialog: "#project-delete-dialog",
     projectDeleteForm: "#project-delete-form",
@@ -3402,7 +3430,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   bindDialogCancel(refs.sessionDeleteDialog, closeSessionDeleteDialog);
   bindDialogSubmit(refs.sessionDeleteForm);
-  bindClick(refs.aboutButton, () => {
+  bindClick(refs.aboutButton, async () => {
+    await refreshAboutDialog();
     openAboutDialog();
   });
   bindClick(refs.aboutCloseButton, () => {

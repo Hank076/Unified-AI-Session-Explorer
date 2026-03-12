@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde_json::Value;
+use rusqlite::{params_from_iter, Connection, OpenFlags};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -117,6 +118,13 @@ pub struct ProjectDeleteImpact {
     pub memory_file_count: usize,
     pub total_file_count: usize,
     pub total_size_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexProjectDiscoveryMode {
+    pub mode: String,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -754,8 +762,9 @@ fn find_string_by_key_recursive(value: &Value, keys: &[&str]) -> Option<String> 
 }
 
 fn project_name_from_cwd(cwd: &str) -> Option<String> {
+    let normalized_cwd = display_codex_cwd(cwd);
     let mut last = None;
-    for component in Path::new(cwd).components() {
+    for component in Path::new(&normalized_cwd).components() {
         if let Component::Normal(value) = component {
             let text = value.to_string_lossy().trim().to_string();
             if !text.is_empty() {
@@ -823,6 +832,14 @@ fn default_projects_path() -> Result<PathBuf, String> {
     Ok(home.join(".claude").join("projects"))
 }
 
+fn default_codex_home_path() -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .ok_or_else(|| ERR_READ_FAILED.to_string())?;
+    Ok(home.join(".codex"))
+}
+
 fn map_read_error(error: std::io::Error) -> String {
     match error.kind() {
         std::io::ErrorKind::NotFound => ERR_NOT_FOUND.to_string(),
@@ -846,15 +863,111 @@ fn get_file_metadata(path: &Path) -> (Option<u64>, Option<u64>) {
 }
 
 fn default_codex_sessions_path() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .ok_or_else(|| ERR_READ_FAILED.to_string())?;
-    Ok(home.join(".codex").join("sessions"))
+    Ok(default_codex_home_path()?.join("sessions"))
+}
+
+fn strip_windows_extended_path_prefix(path: &str) -> &str {
+    path.trim()
+        .strip_prefix(r"\\?\")
+        .or_else(|| path.trim().strip_prefix("//?/"))
+        .unwrap_or(path.trim())
+}
+
+fn display_codex_cwd(cwd: &str) -> String {
+    strip_windows_extended_path_prefix(cwd).trim().to_string()
+}
+
+fn is_windows_absolute_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+fn parse_state_db_version(path: &Path) -> Option<u32> {
+    let file_name = path.file_name()?.to_str()?;
+    let version = file_name
+        .strip_prefix("state_")?
+        .strip_suffix(".sqlite")?;
+    version.parse::<u32>().ok()
+}
+
+fn find_codex_db_path_in(codex_root: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(codex_root).ok()?;
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file())
+        .filter_map(|path| parse_state_db_version(&path).map(|version| (version, path)))
+        .max_by_key(|(version, _)| *version)
+        .map(|(_, path)| path)
+}
+
+fn find_codex_db_path() -> Result<Option<PathBuf>, String> {
+    Ok(find_codex_db_path_in(&default_codex_home_path()?))
+}
+
+fn get_codex_project_discovery_mode_impl() -> CodexProjectDiscoveryMode {
+    if let Ok(Some(db_path)) = find_codex_db_path() {
+        if open_codex_database(&db_path).is_ok() {
+            return CodexProjectDiscoveryMode {
+                mode: "sqlite".to_string(),
+                detail: db_path.file_name().and_then(|name| name.to_str()).map(str::to_string),
+            };
+        }
+    }
+
+    if let Ok(sessions_root) = default_codex_sessions_path() {
+        if sessions_root.exists() {
+            return CodexProjectDiscoveryMode {
+                mode: "scan".to_string(),
+                detail: Some("sessions".to_string()),
+            };
+        }
+    }
+
+    CodexProjectDiscoveryMode {
+        mode: "unavailable".to_string(),
+        detail: None,
+    }
+}
+
+fn open_codex_database(db_path: &Path) -> rusqlite::Result<Connection> {
+    let connection = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    connection.busy_timeout(std::time::Duration::from_millis(1_000))?;
+    connection.pragma_update(None, "query_only", "ON")?;
+    Ok(connection)
+}
+
+fn codex_cwd_query_candidates(cwd: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    let mut push_candidate = |value: String| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if !candidates.iter().any(|existing| existing == trimmed) {
+            candidates.push(trimmed.to_string());
+        }
+    };
+
+    let raw = cwd.trim().to_string();
+    let display = display_codex_cwd(cwd);
+    let backslash_display = display.replace('/', "\\");
+    let slash_display = display.replace('\\', "/");
+
+    push_candidate(raw);
+    push_candidate(display.clone());
+    push_candidate(backslash_display.clone());
+    push_candidate(slash_display);
+    if is_windows_absolute_path(&backslash_display) {
+        push_candidate(format!(r"\\?\{}", backslash_display));
+    }
+
+    candidates
 }
 
 fn normalize_cwd_for_comparison(cwd: &str) -> String {
-    cwd.trim()
+    display_codex_cwd(cwd)
         .replace('\\', "/")
         .trim_end_matches('/')
         .to_lowercase()
@@ -871,7 +984,24 @@ fn validate_under_codex_root(target: &Path) -> Result<PathBuf, String> {
     Ok(canonical_target)
 }
 
-fn collect_codex_session_files(sessions_root: &Path) -> Vec<PathBuf> {
+fn to_optional_u64(value: Option<i64>) -> Option<u64> {
+    value.and_then(|number| u64::try_from(number).ok())
+}
+
+fn build_codex_entry_label(title: Option<String>, first_user_message: Option<String>, rollout_path: &str) -> String {
+    for candidate in [title, first_user_message] {
+        if let Some(text) = candidate {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+
+    file_name_or(Path::new(rollout_path), "session")
+}
+
+fn collect_codex_session_files_from_scan(sessions_root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let Ok(year_entries) = fs::read_dir(sessions_root) else { return files };
     for year_entry in year_entries.flatten() {
@@ -898,7 +1028,7 @@ fn collect_codex_session_files(sessions_root: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn extract_codex_session_cwd(path: &Path) -> Option<String> {
+fn extract_codex_session_cwd_from_scan(path: &Path) -> Option<String> {
     let file = fs::File::open(path).ok()?;
     let reader = BufReader::new(file);
     for line_result in reader.lines().take(20) {
@@ -919,13 +1049,43 @@ fn extract_codex_session_cwd(path: &Path) -> Option<String> {
     None
 }
 
-fn list_codex_project_entries_impl(cwd: &str, sessions_root: &Path) -> Vec<Entry> {
+fn list_codex_projects_from_scan(sessions_root: &Path) -> Vec<Project> {
+    let mut cwd_map: HashMap<String, (String, Option<u64>)> = HashMap::new();
+    for file in collect_codex_session_files_from_scan(sessions_root) {
+        let Some(raw_cwd) = extract_codex_session_cwd_from_scan(&file) else { continue };
+        let normalized_cwd = display_codex_cwd(&raw_cwd);
+        let key = normalize_cwd_for_comparison(&normalized_cwd);
+        let (modified_ms, _) = get_file_metadata(&file);
+
+        let entry = cwd_map
+            .entry(key)
+            .or_insert_with(|| (normalized_cwd.clone(), modified_ms));
+        if modified_ms > entry.1 {
+            entry.1 = modified_ms;
+        }
+    }
+
+    let mut projects: Vec<Project> = cwd_map
+        .into_values()
+        .map(|(cwd, modified_ms)| Project {
+            name: project_name_from_cwd(&cwd).unwrap_or_else(|| cwd.clone()),
+            path: cwd.clone(),
+            cwd_path: Some(cwd),
+            modified_ms,
+            source: "codex".to_string(),
+        })
+        .collect();
+    projects.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    projects
+}
+
+fn list_codex_project_entries_from_scan(cwd: &str, sessions_root: &Path) -> Vec<Entry> {
     let norm_target = normalize_cwd_for_comparison(cwd);
-    let all_files = collect_codex_session_files(sessions_root);
+    let all_files = collect_codex_session_files_from_scan(sessions_root);
 
     let mut entries = Vec::new();
     for file in all_files {
-        let Some(file_cwd) = extract_codex_session_cwd(&file) else { continue };
+        let Some(file_cwd) = extract_codex_session_cwd_from_scan(&file) else { continue };
         if normalize_cwd_for_comparison(&file_cwd) != norm_target {
             continue;
         }
@@ -949,61 +1109,209 @@ fn list_codex_project_entries_impl(cwd: &str, sessions_root: &Path) -> Vec<Entry
     entries
 }
 
+fn query_codex_project_entries_by_candidates(
+    connection: &Connection,
+    target_norm: &str,
+    candidates: &[String],
+) -> rusqlite::Result<Vec<Entry>> {
+    let placeholders = std::iter::repeat("?")
+        .take(candidates.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT rollout_path, title, first_user_message, cwd, updated_at * 1000 AS updated_ms \
+         FROM threads \
+         WHERE archived = 0 \
+           AND cwd IN ({placeholders}) \
+           AND rollout_path IS NOT NULL \
+           AND TRIM(rollout_path) != '' \
+         ORDER BY updated_at DESC"
+    );
+    let mut statement = connection.prepare(&sql)?;
+    let rows = statement.query_map(params_from_iter(candidates.iter()), |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, String>(3)?,
+            to_optional_u64(row.get::<_, Option<i64>>(4)?),
+        ))
+    })?;
+
+    let mut entries = Vec::new();
+    for row in rows {
+        let (rollout_path, title, first_user_message, row_cwd, updated_ms) = row?;
+        if normalize_cwd_for_comparison(&row_cwd) != target_norm {
+            continue;
+        }
+        let path = Path::new(&rollout_path);
+        if !path.exists() {
+            continue;
+        }
+        let (file_modified_ms, size_bytes) = get_file_metadata(path);
+        entries.push(Entry {
+            entry_type: "session".to_string(),
+            label: build_codex_entry_label(title, first_user_message, &rollout_path),
+            path: rollout_path,
+            parent_session: None,
+            modified_ms: updated_ms.or(file_modified_ms),
+            size_bytes,
+            source: "codex".to_string(),
+        });
+    }
+
+    Ok(entries)
+}
+
+fn query_all_codex_project_entries(connection: &Connection, target_norm: &str) -> rusqlite::Result<Vec<Entry>> {
+    let mut statement = connection.prepare(
+        "SELECT rollout_path, title, first_user_message, cwd, updated_at * 1000 AS updated_ms \
+         FROM threads \
+         WHERE archived = 0 \
+           AND rollout_path IS NOT NULL \
+           AND TRIM(rollout_path) != '' \
+         ORDER BY updated_at DESC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, String>(3)?,
+            to_optional_u64(row.get::<_, Option<i64>>(4)?),
+        ))
+    })?;
+
+    let mut entries = Vec::new();
+    for row in rows {
+        let (rollout_path, title, first_user_message, row_cwd, updated_ms) = row?;
+        if normalize_cwd_for_comparison(&row_cwd) != target_norm {
+            continue;
+        }
+        let path = Path::new(&rollout_path);
+        if !path.exists() {
+            continue;
+        }
+        let (file_modified_ms, size_bytes) = get_file_metadata(path);
+        entries.push(Entry {
+            entry_type: "session".to_string(),
+            label: build_codex_entry_label(title, first_user_message, &rollout_path),
+            path: rollout_path,
+            parent_session: None,
+            modified_ms: updated_ms.or(file_modified_ms),
+            size_bytes,
+            source: "codex".to_string(),
+        });
+    }
+
+    Ok(entries)
+}
+
+fn list_codex_project_entries_from_db(cwd: &str, db_path: &Path) -> rusqlite::Result<Vec<Entry>> {
+    let target_norm = normalize_cwd_for_comparison(cwd);
+    if target_norm.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let connection = open_codex_database(db_path)?;
+    let candidates = codex_cwd_query_candidates(cwd);
+    let mut entries = query_codex_project_entries_by_candidates(&connection, &target_norm, &candidates)?;
+    if entries.is_empty() {
+        entries = query_all_codex_project_entries(&connection, &target_norm)?;
+    }
+    entries.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    Ok(entries)
+}
+
+fn list_codex_projects_from_db(db_path: &Path) -> rusqlite::Result<Vec<Project>> {
+    let connection = open_codex_database(db_path)?;
+    let mut statement = connection.prepare(
+        "SELECT cwd, MAX(updated_at) * 1000 AS modified_ms \
+         FROM threads \
+         WHERE archived = 0 \
+           AND cwd IS NOT NULL \
+           AND TRIM(cwd) != '' \
+         GROUP BY cwd \
+         ORDER BY modified_ms DESC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            to_optional_u64(row.get::<_, Option<i64>>(1)?),
+        ))
+    })?;
+
+    let mut deduped: HashMap<String, (String, Option<u64>)> = HashMap::new();
+    for row in rows {
+        let (raw_cwd, modified_ms) = row?;
+        let cwd = display_codex_cwd(&raw_cwd);
+        let key = normalize_cwd_for_comparison(&cwd);
+        if key.is_empty() {
+            continue;
+        }
+
+        let entry = deduped
+            .entry(key)
+            .or_insert_with(|| (cwd.clone(), modified_ms));
+        if modified_ms > entry.1 {
+            entry.0 = cwd;
+            entry.1 = modified_ms;
+        }
+    }
+
+    let mut projects: Vec<Project> = deduped
+        .into_values()
+        .map(|(cwd, modified_ms)| Project {
+            name: project_name_from_cwd(&cwd).unwrap_or_else(|| cwd.clone()),
+            path: cwd.clone(),
+            cwd_path: Some(cwd),
+            modified_ms,
+            source: "codex".to_string(),
+        })
+        .collect();
+    projects.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    Ok(projects)
+}
+
 #[tauri::command]
 pub fn list_codex_project_entries(cwd: String) -> Result<Vec<Entry>, String> {
+    if let Ok(Some(db_path)) = find_codex_db_path() {
+        if let Ok(entries) = list_codex_project_entries_from_db(&cwd, &db_path) {
+            return Ok(entries);
+        }
+    }
+
     let sessions_root = match default_codex_sessions_path() {
-        Ok(p) => p,
+        Ok(path) => path,
         Err(_) => return Ok(vec![]),
     };
     if !sessions_root.exists() {
         return Ok(vec![]);
     }
-    Ok(list_codex_project_entries_impl(&cwd, &sessions_root))
+    Ok(list_codex_project_entries_from_scan(&cwd, &sessions_root))
+}
+
+#[tauri::command]
+pub fn get_codex_project_discovery_mode() -> Result<CodexProjectDiscoveryMode, String> {
+    Ok(get_codex_project_discovery_mode_impl())
 }
 
 #[tauri::command]
 pub fn list_codex_projects() -> Result<Vec<Project>, String> {
+    if let Ok(Some(db_path)) = find_codex_db_path() {
+        if let Ok(projects) = list_codex_projects_from_db(&db_path) {
+            return Ok(projects);
+        }
+    }
+
     let sessions_root = match default_codex_sessions_path() {
-        Ok(p) => p,
+        Ok(path) => path,
         Err(_) => return Ok(vec![]),
     };
     if !sessions_root.exists() {
         return Ok(vec![]);
     }
-
-    let all_files = collect_codex_session_files(&sessions_root);
-
-    // Group by normalized cwd → (raw_cwd, latest_mtime)
-    let mut cwd_map: HashMap<String, (String, Option<u64>)> = HashMap::new();
-    for file in &all_files {
-        let Some(cwd) = extract_codex_session_cwd(file) else { continue };
-        let norm = normalize_cwd_for_comparison(&cwd);
-        let (mtime, _) = get_file_metadata(file);
-        let entry = cwd_map.entry(norm).or_insert_with(|| (cwd.clone(), None));
-        if let Some(mtime_val) = mtime {
-            match entry.1 {
-                Some(existing) if existing >= mtime_val => {}
-                _ => entry.1 = Some(mtime_val),
-            }
-        }
-    }
-
-    let mut projects: Vec<Project> = cwd_map
-        .into_values()
-        .map(|(cwd, modified_ms)| {
-            let name = project_name_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-            Project {
-                name,
-                path: cwd.clone(),
-                cwd_path: Some(cwd),
-                modified_ms,
-                source: "codex".to_string(),
-            }
-        })
-        .collect();
-
-    projects.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
-    Ok(projects)
+    Ok(list_codex_projects_from_scan(&sessions_root))
 }
 
 fn accumulate_codex_metadata(accum: &mut SessionMetadataAccumulator, raw: &Value) {
@@ -1478,54 +1786,145 @@ mod tests {
         assert_eq!(normalize_cwd_for_comparison("D:\\project"), "d:/project");
     }
 
+        fn build_test_codex_db(db_path: &Path) {
+        let connection = Connection::open(db_path).expect("open sqlite db");
+        connection
+            .execute_batch(
+                "CREATE TABLE threads (
+                    id TEXT PRIMARY KEY,
+                    cwd TEXT,
+                    rollout_path TEXT,
+                    title TEXT,
+                    first_user_message TEXT,
+                    created_at INTEGER,
+                    updated_at INTEGER,
+                    archived INTEGER DEFAULT 0
+                );",
+            )
+            .expect("create threads table");
+    }
+
     #[test]
-    fn test_extract_codex_session_cwd_finds_session_meta() {
-        let dir = unique_temp_dir("codex-cwd-found");
-        let session_meta_line = r#"{"timestamp":"2026-01-01T00:00:00Z","type":"session_meta","payload":{"id":"abc","cwd":"D:\\my\\project","cli_version":"1.0.0","model_provider":"openai"}}"#;
-        let other_line = r#"{"timestamp":"2026-01-01T00:00:01Z","type":"turn_context","payload":{"cwd":"D:\\my\\project"}}"#;
-        let content = format!("{}\n{}\n", other_line, session_meta_line);
-        let path = dir.join("session.jsonl");
-        write_file(&path, &content);
-        let result = extract_codex_session_cwd(&path);
-        assert_eq!(result, Some("D:\\my\\project".to_string()));
+    fn test_find_codex_db_path_picks_highest_version() {
+        let dir = unique_temp_dir("codex-db-version");
+        write_file(&dir.join("state_3.sqlite"), "");
+        write_file(&dir.join("state_7.sqlite"), "");
+        write_file(&dir.join("state_5.sqlite"), "");
+
+        let found = find_codex_db_path_in(&dir).expect("find db path");
+        assert_eq!(found.file_name().and_then(|value| value.to_str()), Some("state_7.sqlite"));
 
         fs::remove_dir_all(dir).expect("cleanup");
     }
 
     #[test]
-    fn test_extract_codex_session_cwd_returns_none_when_no_session_meta() {
-        let dir = unique_temp_dir("codex-cwd-none");
-        let content = r#"{"timestamp":"2026-01-01T00:00:00Z","type":"turn_context","payload":{"cwd":"D:\\foo"}}"#;
-        let path = dir.join("session.jsonl");
-        write_file(&path, content);
-        let result = extract_codex_session_cwd(&path);
-        assert_eq!(result, None);
+    fn test_get_codex_project_discovery_mode_impl_unavailable_without_sources() {
+        let mode = get_codex_project_discovery_mode_impl();
+        assert!(matches!(mode.mode.as_str(), "sqlite" | "scan" | "unavailable"));
+    }
 
+    #[test]
+    fn test_list_codex_projects_from_db_dedupes_prefixed_paths() {
+        let dir = unique_temp_dir("codex-projects-db");
+        let db_path = dir.join("state_5.sqlite");
+        build_test_codex_db(&db_path);
+        let connection = Connection::open(&db_path).expect("open sqlite db");
+
+        connection
+            .execute(
+                "INSERT INTO threads (id, cwd, rollout_path, title, first_user_message, created_at, updated_at, archived)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+                (
+                    "thread-1",
+                    r"\\?\D:\repo\demo",
+                    "D:/sessions/one.jsonl",
+                    "Session One",
+                    "hello",
+                    1_i64,
+                    10_i64,
+                ),
+            )
+            .expect("insert thread 1");
+        connection
+            .execute(
+                "INSERT INTO threads (id, cwd, rollout_path, title, first_user_message, created_at, updated_at, archived)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+                (
+                    "thread-2",
+                    r"D:\repo\demo",
+                    "D:/sessions/two.jsonl",
+                    "Session Two",
+                    "hello again",
+                    2_i64,
+                    20_i64,
+                ),
+            )
+            .expect("insert thread 2");
+
+        let projects = list_codex_projects_from_db(&db_path).expect("list codex projects from db");
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "demo");
+        assert_eq!(projects[0].path, r"D:\repo\demo");
+        assert_eq!(projects[0].cwd_path.as_deref(), Some(r"D:\repo\demo"));
+        assert_eq!(projects[0].modified_ms, Some(20_000));
+
+        drop(connection);
         fs::remove_dir_all(dir).expect("cleanup");
     }
 
     #[test]
-    fn test_list_codex_project_entries_filters_by_cwd() {
-        let dir = unique_temp_dir("codex_entries_test");
-        // Create YYYY/MM/DD directory structure
-        let day_dir = dir.join("2026").join("03").join("01");
-        fs::create_dir_all(&day_dir).unwrap();
+    fn test_list_codex_project_entries_from_db_filters_by_normalized_cwd() {
+        let dir = unique_temp_dir("codex-entries-db");
+        let db_path = dir.join("state_5.sqlite");
+        build_test_codex_db(&db_path);
+        let session_a = dir.join("rollout-a.jsonl");
+        let session_b = dir.join("rollout-b.jsonl");
+        write_file(&session_a, "{\"type\":\"session_meta\"}\n");
+        write_file(&session_b, "{\"type\":\"session_meta\"}\n");
 
-        let session_meta_a = r#"{"timestamp":"2026-03-01T10:00:00Z","type":"session_meta","payload":{"id":"aaa","cwd":"D:\\proj\\alpha","cli_version":"1.0","model_provider":"openai"}}"#;
-        let session_meta_b = r#"{"timestamp":"2026-03-01T11:00:00Z","type":"session_meta","payload":{"id":"bbb","cwd":"D:\\proj\\beta","cli_version":"1.0","model_provider":"openai"}}"#;
+        let connection = Connection::open(&db_path).expect("open sqlite db");
+        connection
+            .execute(
+                "INSERT INTO threads (id, cwd, rollout_path, title, first_user_message, created_at, updated_at, archived)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+                (
+                    "thread-a",
+                    r"\\?\D:\proj\alpha",
+                    session_a.to_string_lossy().to_string(),
+                    "Alpha Title",
+                    "Alpha message",
+                    1_i64,
+                    30_i64,
+                ),
+            )
+            .expect("insert thread a");
+        connection
+            .execute(
+                "INSERT INTO threads (id, cwd, rollout_path, title, first_user_message, created_at, updated_at, archived)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+                (
+                    "thread-b",
+                    r"D:\proj\beta",
+                    session_b.to_string_lossy().to_string(),
+                    "",
+                    "Beta fallback",
+                    1_i64,
+                    40_i64,
+                ),
+            )
+            .expect("insert thread b");
 
-        let file_a = day_dir.join("rollout-a.jsonl");
-        let file_b = day_dir.join("rollout-b.jsonl");
-        fs::write(&file_a, session_meta_a).unwrap();
-        fs::write(&file_b, session_meta_b).unwrap();
+        let result = list_codex_project_entries_from_db(r"D:\proj\alpha", &db_path)
+            .expect("list codex entries from db");
 
-        // Call with alpha cwd — should only return file_a
-        let result = list_codex_project_entries_impl("D:\\proj\\alpha", &dir);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].source, "codex");
         assert_eq!(result[0].entry_type, "session");
-        assert!(result[0].path.contains("rollout-a.jsonl"));
+        assert_eq!(result[0].label, "Alpha Title");
+        assert_eq!(result[0].path, session_a.to_string_lossy().to_string());
+        assert_eq!(result[0].modified_ms, Some(30_000));
 
+        drop(connection);
         fs::remove_dir_all(dir).expect("cleanup");
     }
 
