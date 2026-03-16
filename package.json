@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev:web": "http-server ./src -p 1420 -c-1",
+    "dev:web": "npx http-server ./src -p 1420 -c-1",
     "dev:desktop": "npm run tauri -- dev",
     "tauri": "tauri",
     "test": "npm run test:unit && npm run test:ui && npm run test:rust",
